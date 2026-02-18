@@ -93,6 +93,22 @@ docker rm -f openwebui-local-10001
 docker volume rm openwebui-local-10001-data
 ```
 
+## Playwright MCP bridge (all clients)
+
+The repo contains a root `.mcp.json` with a Playwright MCP server definition:
+
+- command: `npx @playwright/mcp@latest --extension`
+- env: `PLAYWRIGHT_MCP_EXTENSION_TOKEN`
+
+Set the token once in your shell (or `.env`) before starting your MCP client:
+
+```bash
+export PLAYWRIGHT_MCP_EXTENSION_TOKEN=your_token_from_extension
+```
+
+Clients that support repo-local MCP config can use `.mcp.json` directly.
+For clients with dedicated MCP settings UIs (e.g. VS Code), use the same server config and the same env var name.
+
 ## Mittwald-ready runtime
 
 Run the image with Mittwald API key and it will auto-configure Open WebUI on startup:
@@ -138,6 +154,8 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults once)
 - `OWUI_BOOTSTRAP_MAX_WAIT_SECONDS` (default: `86400`, wait for first signup)
 - `OWUI_BOOTSTRAP_POLL_INTERVAL_SEC` (default: `2`)
+- `OWUI_BOOTSTRAP_DB_WAIT_TIMEOUT_SEC` (default: `600`, DB readiness wait timeout per run)
+- `OWUI_BOOTSTRAP_STARTUP_MAX_WAIT_SECONDS` (default: `3`, short synchronous pass before app start)
 
 ## Testing scope
 

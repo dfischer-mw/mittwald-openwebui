@@ -30,6 +30,19 @@ def _create_users_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _create_chat_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE chat (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            chat TEXT,
+            created_at TEXT
+        )
+        """
+    )
+
+
 def test_find_users_table_detects_expected_schema(tmp_path):
     db_path = tmp_path / "webui.db"
     conn = sqlite3.connect(db_path)
@@ -49,6 +62,171 @@ def test_find_settings_column_returns_none_when_missing(tmp_path):
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, role TEXT)")
 
     assert seed.find_settings_column(conn, "users") is None
+
+    conn.close()
+
+
+def test_update_chat_params_once_overwrites_existing_when_enabled(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = sqlite3.connect(db_path)
+    _create_chat_table(conn)
+    conn.execute(
+        "INSERT INTO chat (id, user_id, chat, created_at) VALUES (?, ?, ?, datetime('now'))",
+        (
+            "chat-1",
+            "user-1",
+            json.dumps({"params": {"temperature": 0.8, "top_p": 0.9, "min_p": 0}}),
+        ),
+    )
+    conn.commit()
+
+    desired = {"temperature": 0.1, "top_p": 0.5, "top_k": 10}
+    updated = seed.update_chat_params_once(
+        conn,
+        "chat",
+        "id",
+        "chat",
+        desired=desired,
+        force_overwrite=True,
+    )
+    conn.commit()
+
+    assert updated == 1
+
+    row = conn.execute("SELECT chat FROM chat WHERE id = 'chat-1'").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["params"]["temperature"] == 0.1
+    assert parsed["params"]["top_p"] == 0.5
+    assert parsed["params"]["top_k"] == 10
+    # Non-desired keys remain untouched.
+    assert parsed["params"]["min_p"] == 0
+
+    conn.close()
+
+
+def test_update_chat_params_once_only_adds_missing_when_disabled(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = sqlite3.connect(db_path)
+    _create_chat_table(conn)
+    conn.execute(
+        "INSERT INTO chat (id, user_id, chat, created_at) VALUES (?, ?, ?, datetime('now'))",
+        (
+            "chat-1",
+            "user-1",
+            json.dumps({"params": {"temperature": 0.8}}),
+        ),
+    )
+    conn.commit()
+
+    desired = {"temperature": 0.1, "top_p": 0.5}
+    updated = seed.update_chat_params_once(
+        conn,
+        "chat",
+        "id",
+        "chat",
+        desired=desired,
+        force_overwrite=False,
+    )
+    conn.commit()
+
+    assert updated == 1
+
+    row = conn.execute("SELECT chat FROM chat WHERE id = 'chat-1'").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["params"]["temperature"] == 0.8
+    assert parsed["params"]["top_p"] == 0.5
+
+    conn.close()
+
+
+def test_update_chat_params_once_overwrites_history_message_params(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = sqlite3.connect(db_path)
+    _create_chat_table(conn)
+    conn.execute(
+        "INSERT INTO chat (id, user_id, chat, created_at) VALUES (?, ?, ?, datetime('now'))",
+        (
+            "chat-1",
+            "user-1",
+            json.dumps(
+                {
+                    "params": {"temperature": 0.8},
+                    "history": {
+                        "messages": {
+                            "m1": {"id": "m1", "params": {"temperature": 0.8, "top_p": 0.9}}
+                        }
+                    },
+                }
+            ),
+        ),
+    )
+    conn.commit()
+
+    desired = {"temperature": 0.1, "top_p": 0.5, "top_k": 10}
+    updated = seed.update_chat_params_once(
+        conn,
+        "chat",
+        "id",
+        "chat",
+        desired=desired,
+        force_overwrite=True,
+    )
+    conn.commit()
+
+    assert updated == 1
+
+    row = conn.execute("SELECT chat FROM chat WHERE id = 'chat-1'").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["params"]["temperature"] == 0.1
+    msg_params = parsed["history"]["messages"]["m1"]["params"]
+    assert msg_params["temperature"] == 0.1
+    assert msg_params["top_p"] == 0.5
+    assert msg_params["top_k"] == 10
+
+    conn.close()
+
+
+def test_update_chat_params_once_overwrites_message_list_params(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = sqlite3.connect(db_path)
+    _create_chat_table(conn)
+    conn.execute(
+        "INSERT INTO chat (id, user_id, chat, created_at) VALUES (?, ?, ?, datetime('now'))",
+        (
+            "chat-1",
+            "user-1",
+            json.dumps(
+                {
+                    "params": {"temperature": 0.8},
+                    "messages": [
+                        {"id": "m1", "params": {"temperature": 0.8}},
+                        {"id": "m2", "role": "assistant"},
+                    ],
+                }
+            ),
+        ),
+    )
+    conn.commit()
+
+    desired = {"temperature": 0.1, "top_p": 0.5}
+    updated = seed.update_chat_params_once(
+        conn,
+        "chat",
+        "id",
+        "chat",
+        desired=desired,
+        force_overwrite=True,
+    )
+    conn.commit()
+
+    assert updated == 1
+
+    row = conn.execute("SELECT chat FROM chat WHERE id = 'chat-1'").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["messages"][0]["params"]["temperature"] == 0.1
+    assert parsed["messages"][0]["params"]["top_p"] == 0.5
+    assert parsed["messages"][1]["params"]["temperature"] == 0.1
+    assert parsed["messages"][1]["params"]["top_p"] == 0.5
 
     conn.close()
 
@@ -90,15 +268,33 @@ def test_update_user_settings_once_only_adds_missing_keys(tmp_path):
 
     row1 = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
     parsed1 = json.loads(row1)
+    assert parsed1["ui"]["params"]["temperature"] == 0.15
+    assert parsed1["ui"]["params"]["top_p"] == 0.9
+    assert parsed1["ui"]["params"]["top_k"] == 40
+    assert parsed1["ui"]["chat"]["params"]["temperature"] == 0.15
+    assert parsed1["ui"]["chat"]["params"]["top_p"] == 0.9
+    assert parsed1["ui"]["chat"]["params"]["top_k"] == 40
     assert parsed1["params"]["temperature"] == 0.15
     assert parsed1["params"]["top_p"] == 0.9
     assert parsed1["params"]["top_k"] == 40
+    assert parsed1["chat"]["params"]["temperature"] == 0.15
+    assert parsed1["chat"]["params"]["top_p"] == 0.9
+    assert parsed1["chat"]["params"]["top_k"] == 40
 
     row2 = conn.execute("SELECT settings FROM users WHERE id = 2").fetchone()[0]
     parsed2 = json.loads(row2)
+    assert parsed2["ui"]["params"]["temperature"] == 0.7
+    assert parsed2["ui"]["params"]["top_p"] == 0.9
+    assert parsed2["ui"]["params"]["top_k"] == 40
+    assert parsed2["ui"]["chat"]["params"]["temperature"] == 0.7
+    assert parsed2["ui"]["chat"]["params"]["top_p"] == 0.9
+    assert parsed2["ui"]["chat"]["params"]["top_k"] == 40
     assert parsed2["params"]["temperature"] == 0.7
     assert parsed2["params"]["top_p"] == 0.9
     assert parsed2["params"]["top_k"] == 40
+    assert parsed2["chat"]["params"]["temperature"] == 0.7
+    assert parsed2["chat"]["params"]["top_p"] == 0.9
+    assert parsed2["chat"]["params"]["top_k"] == 40
 
     conn.close()
 
@@ -135,11 +331,38 @@ def test_update_user_settings_once_overwrites_existing_when_enabled(tmp_path):
 
     row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
     parsed = json.loads(row)
+    assert parsed["ui"]["params"]["temperature"] == 0.1
+    assert parsed["ui"]["params"]["top_p"] == 0.5
+    assert parsed["ui"]["params"]["top_k"] == 10
+    assert parsed["ui"]["chat"]["params"]["temperature"] == 0.1
+    assert parsed["ui"]["chat"]["params"]["top_p"] == 0.5
+    assert parsed["ui"]["chat"]["params"]["top_k"] == 10
     assert parsed["params"]["temperature"] == 0.1
     assert parsed["params"]["top_p"] == 0.5
     assert parsed["params"]["top_k"] == 10
+    assert parsed["chat"]["params"]["temperature"] == 0.1
+    assert parsed["chat"]["params"]["top_p"] == 0.5
+    assert parsed["chat"]["params"]["top_k"] == 10
 
     conn.close()
+
+
+def test_main_skips_when_db_not_ready(monkeypatch, tmp_path, capsys):
+    missing_db = tmp_path / "missing.db"
+    marker = tmp_path / "marker"
+
+    monkeypatch.setattr(seed, "DB_PATH", str(missing_db))
+    monkeypatch.setattr(seed, "MARKER", str(marker))
+    monkeypatch.setattr(seed, "DB_WAIT_TIMEOUT_SEC", 1)
+    monkeypatch.setattr(seed, "MAX_WAIT_SECONDS", 1)
+    monkeypatch.setattr(seed, "POLL_INTERVAL_SEC", 1)
+    monkeypatch.setattr(seed, "DESIRED", {"temperature": 0.1})
+
+    seed.main()
+
+    output = capsys.readouterr().out
+    assert "DB not ready within 1s" in output
+    assert not marker.exists()
 
 
 def test_update_user_settings_once_migrates_legacy_chat_params(tmp_path):
@@ -167,9 +390,18 @@ def test_update_user_settings_once_migrates_legacy_chat_params(tmp_path):
     assert updated == 1
     row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
     parsed = json.loads(row)
+    assert parsed["ui"]["params"]["temperature"] == 0.33
+    assert parsed["ui"]["params"]["top_p"] == 0.77
+    assert parsed["ui"]["params"]["top_k"] == 42
+    assert parsed["ui"]["chat"]["params"]["temperature"] == 0.33
+    assert parsed["ui"]["chat"]["params"]["top_p"] == 0.77
+    assert parsed["ui"]["chat"]["params"]["top_k"] == 42
     assert parsed["params"]["temperature"] == 0.33
     assert parsed["params"]["top_p"] == 0.77
     assert parsed["params"]["top_k"] == 42
+    assert parsed["chat"]["params"]["temperature"] == 0.33
+    assert parsed["chat"]["params"]["top_p"] == 0.77
+    assert parsed["chat"]["params"]["top_k"] == 42
 
     conn.close()
 

@@ -28,6 +28,7 @@ HF_MODEL_HYPERPARAMS_PATH = Path(
 FORCE_OVERWRITE = os.getenv("OWUI_BOOTSTRAP_FORCE", "true").strip().lower() == "true"
 POLL_INTERVAL_SEC = int(os.getenv("OWUI_BOOTSTRAP_POLL_INTERVAL_SEC", "2"))
 MAX_WAIT_SECONDS = int(os.getenv("OWUI_BOOTSTRAP_MAX_WAIT_SECONDS", "86400"))
+DB_WAIT_TIMEOUT_SEC = int(os.getenv("OWUI_BOOTSTRAP_DB_WAIT_TIMEOUT_SEC", "600"))
 
 # Optional model-aware defaults. Env vars still win when set explicitly.
 MODEL_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -321,6 +322,33 @@ def user_count(conn: sqlite3.Connection, table: str) -> int:
     return int(cur.fetchone()[0])
 
 
+def find_chat_table(conn: sqlite3.Connection) -> Optional[str]:
+    tables = list_tables(conn)
+    candidates = []
+    for t in tables:
+        cols = set(table_columns(conn, t))
+        if "chat" in cols and ("user_id" in cols or "id" in cols):
+            score = 0
+            for c in ("created_at", "updated_at", "title"):
+                if c in cols:
+                    score += 1
+            candidates.append((score, t))
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+    if "chat" in tables:
+        return "chat"
+    return None
+
+
+def find_chat_payload_column(conn: sqlite3.Connection, table: str) -> Optional[str]:
+    cols = table_columns(conn, table)
+    for c in ("chat", "payload", "data", "content"):
+        if c in cols:
+            return c
+    return None
+
+
 def ensure_nested(d: dict, *path: str) -> dict:
     cur = d
     for p in path:
@@ -339,7 +367,11 @@ def update_user_settings_once(
     force_overwrite: Optional[bool] = None,
 ) -> int:
     """
-    Applies DESIRED keys only if missing under settings['chat']['params'].
+    Applies desired keys under current Open WebUI path settings['ui']['params']
+    and mirrors to legacy paths for compatibility:
+    - settings['ui']['chat']['params']
+    - settings['params']
+    - settings['chat']['params']
     Returns number of updated rows.
     """
     updated = 0
@@ -358,32 +390,86 @@ def update_user_settings_once(
             except Exception:
                 base = {}
 
-        # Open WebUI reads global defaults from settings.params.
-        # Keep compatibility with older payloads by importing any legacy chat.params values.
         changed = False
-        params = base.get("params")
-        if not isinstance(params, dict):
-            params = {}
-            base["params"] = params
+
+        # Canonical path for current Open WebUI versions:
+        # settings.ui.params (loaded by frontend through userSettings.ui).
+        ui = base.get("ui")
+        if not isinstance(ui, dict):
+            ui = {}
+            base["ui"] = ui
             changed = True
 
-        legacy_chat = base.get("chat")
-        if isinstance(legacy_chat, dict):
-            legacy_params = legacy_chat.get("params")
-            if isinstance(legacy_params, dict):
-                for key, value in legacy_params.items():
-                    if key not in params:
-                        params[key] = value
-                        changed = True
+        params = ui.get("params")
+        if not isinstance(params, dict):
+            params = {}
+            ui["params"] = params
+            changed = True
+
+        ui_chat = ui.get("chat")
+        if not isinstance(ui_chat, dict):
+            ui_chat = {}
+            ui["chat"] = ui_chat
+            changed = True
+
+        ui_chat_params = ui_chat.get("params")
+        if not isinstance(ui_chat_params, dict):
+            ui_chat_params = {}
+            ui_chat["params"] = ui_chat_params
+            changed = True
+
+        # Legacy compatibility paths (older payload shapes we still keep in sync).
+        legacy_top_params = base.get("params")
+        if not isinstance(legacy_top_params, dict):
+            legacy_top_params = {}
+            base["params"] = legacy_top_params
+            changed = True
+
+        legacy_top_chat = base.get("chat")
+        if not isinstance(legacy_top_chat, dict):
+            legacy_top_chat = {}
+            base["chat"] = legacy_top_chat
+            changed = True
+
+        legacy_top_chat_params = legacy_top_chat.get("params")
+        if not isinstance(legacy_top_chat_params, dict):
+            legacy_top_chat_params = {}
+            legacy_top_chat["params"] = legacy_top_chat_params
+            changed = True
+
+        compatibility_params = [ui_chat_params, legacy_top_params, legacy_top_chat_params]
+
+        # Migrate forward from legacy paths to canonical ui.params.
+        for source in compatibility_params:
+            for key, value in source.items():
+                if key not in params:
+                    params[key] = value
+                    changed = True
 
         for k, v in desired_values.items():
             if overwrite:
                 if params.get(k) != v:
                     params[k] = v
                     changed = True
-            elif k not in params:
-                params[k] = v
-                changed = True
+                for target in compatibility_params:
+                    if target.get(k) != v:
+                        target[k] = v
+                        changed = True
+            else:
+                if k not in params:
+                    params[k] = v
+                    changed = True
+                for target in compatibility_params:
+                    if k not in target:
+                        target[k] = params.get(k)
+                        changed = True
+
+        # Keep all compatibility paths aligned with canonical ui.params.
+        for target in compatibility_params:
+            for key, value in params.items():
+                if key not in target:
+                    target[key] = value
+                    changed = True
 
         if changed:
             conn.execute(
@@ -395,17 +481,109 @@ def update_user_settings_once(
     return updated
 
 
+def update_chat_params_once(
+    conn: sqlite3.Connection,
+    table: str,
+    id_col: str,
+    payload_col: str,
+    desired: Optional[Dict[str, object]] = None,
+    force_overwrite: Optional[bool] = None,
+) -> int:
+    updated = 0
+    desired_values = desired if desired is not None else DESIRED
+    overwrite = FORCE_OVERWRITE if force_overwrite is None else force_overwrite
+    cur = conn.execute(f"SELECT {id_col}, {payload_col} FROM '{table}'")
+    rows = cur.fetchall()
+
+    def apply_desired(params_obj: Optional[dict]) -> tuple[dict, bool]:
+        changed_local = False
+        params_local = params_obj if isinstance(params_obj, dict) else {}
+        if not isinstance(params_obj, dict):
+            changed_local = True
+
+        for k, v in desired_values.items():
+            if overwrite:
+                if params_local.get(k) != v:
+                    params_local[k] = v
+                    changed_local = True
+            elif k not in params_local:
+                params_local[k] = v
+                changed_local = True
+        return params_local, changed_local
+
+    for row_id, payload_raw in rows:
+        payload = {}
+        if payload_raw:
+            try:
+                payload = json.loads(payload_raw)
+                if not isinstance(payload, dict):
+                    payload = {}
+            except Exception:
+                payload = {}
+
+        changed = False
+        params, params_changed = apply_desired(payload.get("params"))
+        payload["params"] = params
+        changed = changed or params_changed
+
+        # Some Open WebUI versions keep per-message param snapshots in history.
+        # Normalize those too so old chats do not keep stale defaults (e.g. 0.8).
+        history = payload.get("history")
+        if isinstance(history, dict):
+            messages = history.get("messages")
+            if isinstance(messages, dict):
+                for _msg_id, msg in messages.items():
+                    if not isinstance(msg, dict):
+                        continue
+                    if "params" not in msg and not overwrite:
+                        continue
+                    new_msg_params, msg_changed = apply_desired(msg.get("params"))
+                    if msg_changed:
+                        msg["params"] = new_msg_params
+                        changed = True
+
+        # Keep compatibility with list-based message payload snapshots.
+        message_list = payload.get("messages")
+        if isinstance(message_list, list):
+            for msg in message_list:
+                if not isinstance(msg, dict):
+                    continue
+                if "params" not in msg and not overwrite:
+                    continue
+                new_msg_params, msg_changed = apply_desired(msg.get("params"))
+                if msg_changed:
+                    msg["params"] = new_msg_params
+                    changed = True
+
+        if changed:
+            conn.execute(
+                f"UPDATE '{table}' SET {payload_col} = ? WHERE {id_col} = ?",
+                (json.dumps(payload, ensure_ascii=False), row_id),
+            )
+            updated += 1
+
+    return updated
+
+
 def main():
     if not DESIRED:
         log("No OWUI_BOOTSTRAP_* env vars set; nothing to do.")
         return
 
-    if os.path.exists(MARKER):
+    if os.path.exists(MARKER) and not FORCE_OVERWRITE:
         log("Marker exists; bootstrap already done.")
         return
+    if os.path.exists(MARKER) and FORCE_OVERWRITE:
+        log("Marker exists but OWUI_BOOTSTRAP_FORCE=true; re-applying defaults.")
 
     log(f"Waiting for DB: {DB_PATH}")
-    wait_for_db(DB_PATH)
+    try:
+        wait_for_db(DB_PATH, timeout_s=DB_WAIT_TIMEOUT_SEC)
+    except TimeoutError:
+        log(
+            f"DB not ready within {DB_WAIT_TIMEOUT_SEC}s ({DB_PATH}); skipping bootstrap attempt."
+        )
+        return
 
     # keep retrying in case the app is migrating/locking sqlite or user signs up later.
     # MAX_WAIT_SECONDS <= 0 means "wait indefinitely".
@@ -452,7 +630,7 @@ def main():
             id_col = find_id_column(conn, users_table)
 
             conn.execute("BEGIN;")
-            n = update_user_settings_once(
+            n_users = update_user_settings_once(
                 conn,
                 users_table,
                 id_col,
@@ -460,6 +638,20 @@ def main():
                 desired=DESIRED,
                 force_overwrite=FORCE_OVERWRITE,
             )
+            n_chats = 0
+            chat_table = find_chat_table(conn)
+            if chat_table:
+                chat_payload_col = find_chat_payload_column(conn, chat_table)
+                if chat_payload_col:
+                    chat_id_col = find_id_column(conn, chat_table)
+                    n_chats = update_chat_params_once(
+                        conn,
+                        chat_table,
+                        chat_id_col,
+                        chat_payload_col,
+                        desired=DESIRED,
+                        force_overwrite=FORCE_OVERWRITE,
+                    )
             conn.execute("COMMIT;")
             conn.close()
 
@@ -468,7 +660,9 @@ def main():
                 f.write(f"done {int(time.time())}\n")
 
             mode = "overwrite" if FORCE_OVERWRITE else "missing-only"
-            log(f"Injected defaults into {n} user(s) ({mode} mode). Done.")
+            log(
+                f"Injected defaults into {n_users} user(s) and {n_chats} chat(s) ({mode} mode). Done."
+            )
             return
 
         except sqlite3.OperationalError as e:

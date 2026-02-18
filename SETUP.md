@@ -39,3 +39,11 @@ After successful CI run:
 ```bash
 docker pull ghcr.io/<repo-owner>/openwebui:<tag>
 ```
+
+## 3. Playwright MCP extension bridge
+
+Repo-level MCP config is available in `.mcp.json`.
+
+1. Install the Playwright MCP browser extension.
+2. Set `PLAYWRIGHT_MCP_EXTENSION_TOKEN` in your environment.
+3. Start your MCP client (VS Code/Cursor/etc.); it should pick up the `playwright` server definition.
