@@ -4,6 +4,7 @@
 
 The workflow uses GHCR and pushes to `ghcr.io/<repo-owner>/<repo-name>` by default.
 Set repository variable `GHCR_IMAGE_NAME` to override (example: `mittwald/openwebui`).
+Every successful publish pushes three tags: `<version>-<date>`, `<version>`, and `latest`.
 
 ### Required
 
@@ -13,6 +14,10 @@ Set repository variable `GHCR_IMAGE_NAME` to override (example: `mittwald/openwe
 
 - `MITTWALD_API_TOKEN`
 - `HUGGINGFACE_TOKEN`
+
+### Runtime secret (container)
+
+- `MITTWALD_OPENAI_API_KEY` for automatic Mittwald model discovery and provider setup in Open WebUI.
 
 ### Run manually
 

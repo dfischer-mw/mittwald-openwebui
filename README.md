@@ -17,9 +17,14 @@ Override target image name with repository variable `GHCR_IMAGE_NAME` if needed.
 - Daily build on GitHub Actions (`.github/workflows/openwebui-monitor.yml`)
 - Push-triggered build on GitHub Actions (`main` branch)
 - Stable Open WebUI release auto-resolution (or manual override)
+- Automatic publish of `:latest` on every successful push/scheduled run
 - Hugging Face settings scrape (`scripts/scrape_huggingface.py`)
 - Mittwald model scrape (`scripts/scrape_mittwald_portal.py`, optional token)
-- One-time bootstrap seeding in container startup
+- Bootstrap seeding in container startup:
+  - One-time user chat defaults
+  - Mittwald OpenAI provider auto-configuration
+  - Auto-discovery of all available Mittwald models from `/v1/models` (including embeddings and Whisper)
+  - Auto-setup of Open WebUI STT engine for Mittwald Whisper model
 - Full CI test flow:
   - Python compile checks
   - Python unit tests for all custom Python scripts
@@ -56,6 +61,24 @@ make check
 make test-full
 ```
 
+## Mittwald-ready runtime
+
+Run the image with Mittwald API key and it will auto-configure Open WebUI on startup:
+
+- Discovers model IDs from `GET /v1/models`
+- Injects model list into OpenAI-compatible provider config
+- Sets default chat model
+- Sets RAG embedding engine/model when an embedding model is available
+- Sets STT engine to `openai` and selects a Whisper model automatically
+
+```bash
+docker run -d -p 3000:8080 \\
+  -v open-webui-data:/app/backend/data \\
+  -e MITTWALD_OPENAI_API_KEY=sk-... \\
+  -e MITTWALD_OPENAI_BASE_URL=https://llm.aihosting.mittwald.de/v1 \\
+  ghcr.io/<repo-owner>/<repo-name>:latest
+```
+
 ## Local image push to GHCR
 
 ```bash
@@ -72,12 +95,17 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `OWUI_BOOTSTRAP_MAX_TOKENS`
 - `OWUI_DB_PATH`
 - `OWUI_BOOTSTRAP_MARKER`
+- `MITTWALD_OPENAI_API_KEY`
+- `MITTWALD_OPENAI_BASE_URL` (default: `https://llm.aihosting.mittwald.de/v1`)
+- `MITTWALD_CONFIGURE_AUDIO_STT` (default: `true`)
+- `MITTWALD_DISCOVERY_TIMEOUT_SEC` (default: `20`)
 
 ## Testing scope
 
 Unit tests cover all custom Python modules:
 
 - `bootstrap/seed_user_chat_params_once.py`
+- `bootstrap/seed_mittwald_openai_config.py`
 - `scripts/scrape_huggingface.py`
 - `scripts/scrape_mittwald_portal.py`
 

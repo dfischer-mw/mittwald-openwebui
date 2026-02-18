@@ -37,3 +37,12 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 ### GitHub
 
 - Built-in `GITHUB_TOKEN` with package write permission
+
+### Runtime (Container)
+
+- `MITTWALD_OPENAI_API_KEY` to auto-discover and inject Mittwald models into Open WebUI
+- Optional: `MITTWALD_OPENAI_BASE_URL` (default: `https://llm.aihosting.mittwald.de/v1`)
+- Optional toggles:
+  - `MITTWALD_CONFIGURE_AUDIO_STT=true`
+  - `MITTWALD_SET_DEFAULT_MODEL=true`
+  - `MITTWALD_CONFIGURE_RAG_EMBEDDING=true`

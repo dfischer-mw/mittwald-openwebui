@@ -33,7 +33,9 @@ log "✓ Image exists"
 # Test 2: Verify bootstrap scripts are present
 log "Test 2: Checking bootstrap scripts..."
 OUTPUT=$(docker run --rm --entrypoint ls "${IMAGE}" /usr/local/bin/ 2>&1)
-if echo "${OUTPUT}" | grep -q "start-with-bootstrap.sh" && echo "${OUTPUT}" | grep -q "seed_user_chat_params_once.py"; then
+if echo "${OUTPUT}" | grep -q "start-with-bootstrap.sh" \
+	&& echo "${OUTPUT}" | grep -q "seed_user_chat_params_once.py" \
+	&& echo "${OUTPUT}" | grep -q "seed_mittwald_openai_config.py"; then
 	log "✓ Bootstrap scripts present"
 else
 	log "ERROR: Bootstrap scripts missing"
