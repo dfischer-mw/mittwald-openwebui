@@ -76,16 +76,6 @@ python:checks:
 build:test:publish:
   stage: build
   image: docker:27
-  services:
-    - name: docker:27-dind
-      alias: docker
-      command:
-        - "--host=tcp://0.0.0.0:2375"
-        - "--host=unix:///var/run/docker-dind.sock"
-        - "--tls=false"
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
   needs:
     - job: prepare:data
       artifacts: true
@@ -95,6 +85,7 @@ build:test:publish:
     - apk add --no-cache bash curl
     - test -f .tmp/bootstrap.env
     - test -f .tmp/models.json
+    - unset DOCKER_HOST DOCKER_TLS_CERTDIR
     - docker version
     - docker build --build-arg OWUI_VERSION="${OWUI_VERSION}" -t "${IMAGE_REF}:${DATED_TAG}" .
     - chmod +x scripts/test_image.sh
