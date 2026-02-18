@@ -60,6 +60,16 @@ MODEL_SETTINGS = {
 }
 
 HF_API_BASE = "https://huggingface.co/api"
+DEFAULT_TARGET_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+
+
+def _debug_enabled() -> bool:
+    return os.getenv("HF_SCRAPER_DEBUG", "").lower() in {"1", "true", "yes"}
+
+
+def _debug(msg: str) -> None:
+    if _debug_enabled():
+        print(msg, file=sys.stderr)
 
 
 def get_model_info(model_id: str, token: Optional[str] = None) -> Dict[str, Any]:
@@ -75,7 +85,7 @@ def get_model_info(model_id: str, token: Optional[str] = None) -> Dict[str, Any]
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        print(f"Error fetching {model_id}: {e}", file=sys.stderr)
+        _debug(f"Error fetching {model_id}: {e}")
         return {}
 
 
@@ -118,7 +128,7 @@ def scrape_model_readme(model_id: str, token: Optional[str] = None) -> Dict[str,
         return settings
 
     except Exception as e:
-        print(f"Error scraping {model_id} README: {e}", file=sys.stderr)
+        _debug(f"Error scraping {model_id} README: {e}")
         return {}
 
 
@@ -129,28 +139,38 @@ def determine_settings(model_family: Optional[str] = None) -> Dict[str, float]:
     return DEFAULT_SETTINGS.copy()
 
 
+def infer_model_family(model_id: str) -> Optional[str]:
+    """Infer model family from model id for fallback defaults."""
+    lid = model_id.lower()
+    for family in MODEL_SETTINGS:
+        if family in lid:
+            return family
+    return None
+
+
 def main():
     """Main scraping logic."""
-    token = os.getenv("HUGGINGFACE_TOKEN")
+    token = os.getenv("HUGGINGFACE_TOKEN", "").strip()
+    target_model = os.getenv("HUGGINGFACE_TARGET_MODEL", DEFAULT_TARGET_MODEL).strip()
+    configured_family = os.getenv("HUGGINGFACE_MODEL_FAMILY", "").strip()
+    model_family = configured_family or infer_model_family(target_model)
 
-    # Default to general LLM settings
-    settings = DEFAULT_SETTINGS.copy()
+    settings = determine_settings(model_family)
+    source = "default_settings"
 
-    # Try to scrape from Open WebUI's Hugging Face space
-    try:
-        model_info = get_model_info("open-webui/open-webui", token or "")
+    # Avoid unauthenticated calls in CI to prevent noisy 401/403 failures.
+    if token:
+        model_info = get_model_info(target_model, token)
+        readme_settings = scrape_model_readme(target_model, token)
 
-        # Check if there's info about default models
         if model_info:
             card_data = model_info.get("cardData", {})
             if "default_params" in card_data:
                 settings.update(card_data["default_params"])
-    except Exception as e:
-        print(f"Could not fetch Open WebUI model info: {e}", file=sys.stderr)
-
-    # Scrape README for additional settings
-    readme_settings = scrape_model_readme("open-webui/open-webui", token or "")
-    settings.update(readme_settings)
+        settings.update(readme_settings)
+        source = "huggingface_scrape" if (model_info or readme_settings) else "fallback"
+    else:
+        _debug("HUGGINGFACE_TOKEN not set; using default settings.")
 
     # Output as JSON
     output = {
@@ -161,7 +181,7 @@ def main():
             "repetition_penalty", DEFAULT_SETTINGS["repetition_penalty"]
         ),
         "max_tokens": settings.get("max_tokens", DEFAULT_SETTINGS["max_tokens"]),
-        "source": "huggingface_scrape",
+        "source": source,
     }
 
     print(json.dumps(output, indent=2))

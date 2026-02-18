@@ -66,6 +66,7 @@ def test_scrape_model_readme_extracts_generation_params(monkeypatch):
 
 
 def test_main_prints_json_with_scraped_overrides(monkeypatch, capsys):
+    monkeypatch.setenv("HUGGINGFACE_TOKEN", "test-token")
     monkeypatch.setattr(hf, "get_model_info", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(
         hf,
@@ -79,3 +80,15 @@ def test_main_prints_json_with_scraped_overrides(monkeypatch, capsys):
     assert output["temperature"] == 0.42
     assert output["top_p"] == 0.88
     assert output["source"] == "huggingface_scrape"
+
+
+def test_main_without_token_uses_default_source(monkeypatch, capsys):
+    monkeypatch.delenv("HUGGINGFACE_TOKEN", raising=False)
+    monkeypatch.setenv("HUGGINGFACE_MODEL_FAMILY", "llama")
+
+    hf.main()
+    output = json.loads(capsys.readouterr().out)
+
+    assert output["temperature"] == 0.7
+    assert output["top_p"] == 0.9
+    assert output["source"] == "default_settings"
