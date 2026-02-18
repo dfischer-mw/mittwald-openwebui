@@ -4,6 +4,8 @@ set -euo pipefail
 IMAGE="${1:-openwebui-mittwald:latest}"
 CONTAINER_NAME="openwebui-test-$$"
 DB_VOLUME="${CONTAINER_NAME}-data"
+HEALTH_TIMEOUT_SEC="${TEST_HEALTH_TIMEOUT_SEC:-720}"
+RESTART_TIMEOUT_SEC="${TEST_RESTART_TIMEOUT_SEC:-240}"
 
 log() {
 	echo "[test] $*" >&2
@@ -54,20 +56,33 @@ fi
 
 # Test 4: Start container and verify it becomes healthy
 log "Test 4: Starting container and waiting for healthy state..."
-docker run -d \
-	--name "${CONTAINER_NAME}" \
-	-v "${DB_VOLUME}:/app/backend/data" \
-	-e OWUI_BOOTSTRAP_TEMPERATURE=0.6 \
-	-e OWUI_BOOTSTRAP_TOP_P=0.9 \
-	-e OWUI_BOOTSTRAP_TOP_K=42 \
-	-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.05 \
-	-e OWUI_BOOTSTRAP_MAX_TOKENS=3072 \
-	-p 127.0.0.1:18080:8080 \
-	"${IMAGE}" >/dev/null
+RUN_ARGS=(
+	-d
+	--name "${CONTAINER_NAME}"
+	-v "${DB_VOLUME}:/app/backend/data"
+	-e OWUI_BOOTSTRAP_TEMPERATURE=0.6
+	-e OWUI_BOOTSTRAP_TOP_P=0.9
+	-e OWUI_BOOTSTRAP_TOP_K=42
+	-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.05
+	-e OWUI_BOOTSTRAP_MAX_TOKENS=3072
+	-p 127.0.0.1:18080:8080
+)
 
-log "Waiting for container startup and /health/liveness (up to 240s)..."
+# Pass through HF token if present to reduce first-start download throttling.
+if [ -n "${HUGGINGFACE_TOKEN:-}" ]; then
+	RUN_ARGS+=(-e "HF_TOKEN=${HUGGINGFACE_TOKEN}" -e "HUGGINGFACE_HUB_TOKEN=${HUGGINGFACE_TOKEN}")
+fi
+
+docker run "${RUN_ARGS[@]}" "${IMAGE}" >/dev/null
+
+MAX_STARTUP_POLLS=$((HEALTH_TIMEOUT_SEC / 2))
+if [ "${MAX_STARTUP_POLLS}" -lt 1 ]; then
+	MAX_STARTUP_POLLS=1
+fi
+
+log "Waiting for container startup and /health/liveness (up to ${HEALTH_TIMEOUT_SEC}s)..."
 HEALTHY="false"
-for i in {1..120}; do
+for ((i = 1; i <= MAX_STARTUP_POLLS; i++)); do
 	if ! docker ps --filter "name=${CONTAINER_NAME}" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
 		log "ERROR: Container stopped unexpectedly during startup"
 		docker logs "${CONTAINER_NAME}" || true
@@ -139,7 +154,11 @@ docker stop "${CONTAINER_NAME}" >/dev/null
 docker start "${CONTAINER_NAME}" >/dev/null
 
 RESTART_HEALTHY="false"
-for i in {1..90}; do
+MAX_RESTART_POLLS=$((RESTART_TIMEOUT_SEC / 2))
+if [ "${MAX_RESTART_POLLS}" -lt 1 ]; then
+	MAX_RESTART_POLLS=1
+fi
+for ((i = 1; i <= MAX_RESTART_POLLS; i++)); do
 	if ! docker ps --filter "name=${CONTAINER_NAME}" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
 		log "ERROR: Container failed to restart"
 		docker logs "${CONTAINER_NAME}" || true
@@ -157,7 +176,7 @@ done
 if [ "${RESTART_HEALTHY}" = "true" ]; then
 	log "✓ Container restart successful"
 else
-	log "ERROR: Restarted container did not become healthy in time"
+	log "ERROR: Restarted container did not become healthy in ${RESTART_TIMEOUT_SEC}s"
 	docker logs "${CONTAINER_NAME}" || true
 	exit 1
 fi

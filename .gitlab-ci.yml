@@ -95,6 +95,8 @@ build:test:publish:
     - test -f .tmp/bootstrap.env
     - test -f .tmp/models.json
     - unset DOCKER_HOST DOCKER_TLS_CERTDIR
+    - export TEST_HEALTH_TIMEOUT_SEC="${TEST_HEALTH_TIMEOUT_SEC:-900}"
+    - export TEST_RESTART_TIMEOUT_SEC="${TEST_RESTART_TIMEOUT_SEC:-300}"
     - docker version
     - docker build --build-arg OWUI_VERSION="${OWUI_VERSION}" -t "${IMAGE_REF}:${DATED_TAG}" .
     - chmod +x scripts/test_image.sh
