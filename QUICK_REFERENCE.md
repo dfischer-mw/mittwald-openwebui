@@ -18,7 +18,6 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 ## CI files
 
 - GitHub: `.github/workflows/openwebui-monitor.yml`
-- GitLab: `.gitlab-ci.yml`
 
 ## Published image
 
@@ -36,9 +35,3 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 ### GitHub
 
 - Built-in `GITHUB_TOKEN` with package write permission
-
-### GitLab
-
-- `GHCR_USERNAME`
-- `GHCR_TOKEN`
-- Optional: `MITTWALD_API_TOKEN`, `OWUI_VERSION`, `PUSH_IMAGE`

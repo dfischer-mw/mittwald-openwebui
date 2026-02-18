@@ -22,23 +22,7 @@ The workflow uses GHCR and pushes `ghcr.io/mittwald/openwebui`.
    - `owui_version`
    - `push_image`
 
-## 2. GitLab CI setup
-
-Create these CI/CD variables:
-
-- `GHCR_USERNAME` (required for publishing)
-- `GHCR_TOKEN` (required for publishing)
-- `MITTWALD_API_TOKEN` (optional)
-- `OWUI_VERSION` (optional override)
-- `PUSH_IMAGE=false` (optional test-only mode)
-
-The pipeline file is `.gitlab-ci.yml`.
-
-### GitLab schedule
-
-Create a scheduled pipeline in GitLab UI targeting the default branch (daily recommended).
-
-## 3. Verify output links
+## 2. Verify output links
 
 After successful CI run:
 
