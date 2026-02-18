@@ -76,7 +76,14 @@ def test_update_user_settings_once_only_adds_missing_keys(tmp_path):
         "top_k": 40,
     }
 
-    updated = seed.update_user_settings_once(conn, "users", "id", "settings")
+    updated = seed.update_user_settings_once(
+        conn,
+        "users",
+        "id",
+        "settings",
+        desired=seed.DESIRED,
+        force_overwrite=False,
+    )
     conn.commit()
 
     assert updated == 2
@@ -94,3 +101,75 @@ def test_update_user_settings_once_only_adds_missing_keys(tmp_path):
     assert parsed2["chat"]["params"]["top_k"] == 40
 
     conn.close()
+
+
+def test_update_user_settings_once_overwrites_existing_when_enabled(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = _create_users_db(db_path)
+
+    existing = {"chat": {"params": {"temperature": 0.7, "top_p": 0.9}}}
+
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (1, "a@example.com", "admin", json.dumps(existing)),
+    )
+    conn.commit()
+
+    desired = {
+        "temperature": 0.1,
+        "top_p": 0.5,
+        "top_k": 10,
+    }
+
+    updated = seed.update_user_settings_once(
+        conn,
+        "users",
+        "id",
+        "settings",
+        desired=desired,
+        force_overwrite=True,
+    )
+    conn.commit()
+
+    assert updated == 1
+
+    row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["chat"]["params"]["temperature"] == 0.1
+    assert parsed["chat"]["params"]["top_p"] == 0.5
+    assert parsed["chat"]["params"]["top_k"] == 10
+
+    conn.close()
+
+
+def test_build_desired_defaults_uses_ministral_profile_from_discovery(tmp_path, monkeypatch):
+    cache = tmp_path / "mittwald-models-discovery.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "classification": {
+                    "default_chat_model": "Ministral-3-14B-Instruct-2512",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(seed, "DISCOVERY_CACHE_PATH", cache)
+    monkeypatch.setattr(
+        seed,
+        "ENV_DEFAULTS",
+        {
+            "temperature": None,
+            "top_p": None,
+            "top_k": None,
+            "repetition_penalty": None,
+            "max_tokens": None,
+        },
+    )
+
+    desired = seed.build_desired_defaults()
+
+    assert desired["temperature"] == 0.1
+    assert desired["top_p"] == 0.5
+    assert desired["top_k"] == 10

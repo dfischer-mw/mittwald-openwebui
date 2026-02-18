@@ -97,9 +97,12 @@ Run the image with Mittwald API key and it will auto-configure Open WebUI on sta
 
 - Discovers model IDs from `GET /v1/models`
 - Injects model list into OpenAI-compatible provider config
-- Sets default chat model
+- Sets default chat model (priority: Ministral, then Devstral, then GPT-OSS)
 - Sets RAG embedding engine/model when an embedding model is available
 - Sets STT engine to `openai` and selects a Whisper model automatically
+- Seeds per-user chat defaults from model profile on first bootstrap
+  - `Ministral`: `temperature=0.1`, `top_p=0.5`, `top_k=10`
+  - explicit `OWUI_BOOTSTRAP_*` env vars still override these values
 
 ```bash
 docker run -d -p 3000:8080 \\
@@ -129,6 +132,7 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `MITTWALD_OPENAI_BASE_URL` (default: `https://llm.aihosting.mittwald.de/v1`)
 - `MITTWALD_CONFIGURE_AUDIO_STT` (default: `true`)
 - `MITTWALD_DISCOVERY_TIMEOUT_SEC` (default: `20`)
+- `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults once)
 
 ## Testing scope
 

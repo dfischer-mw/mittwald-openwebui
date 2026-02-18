@@ -46,6 +46,14 @@ MITTWALD_CHAT_MODEL_HINT = os.getenv("MITTWALD_CHAT_MODEL_HINT", "").strip()
 MITTWALD_EMBEDDING_MODEL_HINT = os.getenv("MITTWALD_EMBEDDING_MODEL_HINT", "").strip()
 MITTWALD_WHISPER_MODEL_HINT = os.getenv("MITTWALD_WHISPER_MODEL_HINT", "").strip()
 MITTWALD_RERANKING_MODEL_HINT = os.getenv("MITTWALD_RERANKING_MODEL_HINT", "").strip()
+MITTWALD_CHAT_MODEL_PRIORITY = [
+    p.strip().lower()
+    for p in os.getenv(
+        "MITTWALD_CHAT_MODEL_PRIORITY",
+        "ministral,devstral,gpt-oss,qwen",
+    ).split(",")
+    if p.strip()
+]
 MITTWALD_EMBEDDING_PROBE_INPUT = os.getenv(
     "MITTWALD_EMBEDDING_PROBE_INPUT", "mittwald endpoint capability probe"
 )
@@ -115,6 +123,20 @@ def _pick_by_hint(candidates: List[str], hint: str) -> Optional[str]:
     return candidates[0]
 
 
+def _pick_with_priority(candidates: List[str], hint: str, priority_tokens: List[str]) -> Optional[str]:
+    picked = _pick_by_hint(candidates, hint)
+    if picked is not None and hint:
+        return picked
+    if not candidates:
+        return None
+    for token in priority_tokens:
+        lowered = token.lower()
+        for model in candidates:
+            if lowered in model.lower():
+                return model
+    return candidates[0]
+
+
 def classify_models(model_ids: List[str]) -> Dict[str, Any]:
     whisper_candidates = [m for m in model_ids if "whisper" in m.lower()]
     embedding_candidates = [m for m in model_ids if "embedding" in m.lower()]
@@ -132,7 +154,9 @@ def classify_models(model_ids: List[str]) -> Dict[str, Any]:
         "embedding_candidates": embedding_candidates,
         "whisper_candidates": whisper_candidates,
         "reranking_candidates": reranking_candidates,
-        "default_chat_model": _pick_by_hint(chat_candidates, MITTWALD_CHAT_MODEL_HINT),
+        "default_chat_model": _pick_with_priority(
+            chat_candidates, MITTWALD_CHAT_MODEL_HINT, MITTWALD_CHAT_MODEL_PRIORITY
+        ),
         "default_embedding_model": _pick_by_hint(embedding_candidates, MITTWALD_EMBEDDING_MODEL_HINT),
         "default_whisper_model": _pick_by_hint(whisper_candidates, MITTWALD_WHISPER_MODEL_HINT),
         "default_reranking_model": _pick_by_hint(reranking_candidates, MITTWALD_RERANKING_MODEL_HINT),

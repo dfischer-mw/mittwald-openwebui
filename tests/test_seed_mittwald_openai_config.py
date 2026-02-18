@@ -46,6 +46,18 @@ def test_classify_models_picks_chat_embedding_and_whisper_defaults():
     assert classified["default_reranking_model"] == "BGE-Reranker-v2"
 
 
+def test_classify_models_prefers_ministral_with_default_priority():
+    model_ids = [
+        "gpt-oss-120b",
+        "Ministral-3-14B-Instruct-2512",
+        "Qwen3-Embedding-8B",
+    ]
+
+    classified = seed.classify_models(model_ids)
+
+    assert classified["default_chat_model"] == "Ministral-3-14B-Instruct-2512"
+
+
 def test_select_embedding_model_probes_until_supported(monkeypatch):
     classification = {
         "embedding_candidates": ["Emb-A", "Emb-B"],

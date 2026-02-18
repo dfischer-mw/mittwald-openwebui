@@ -3,15 +3,65 @@ import json
 import os
 import sqlite3
 import time
-from typing import Optional, List, Dict
+from pathlib import Path
+from typing import Any, Optional, List, Dict
 
 DB_PATH = os.getenv("OWUI_DB_PATH", "/app/backend/data/webui.db")
 MARKER = os.getenv(
     "OWUI_BOOTSTRAP_MARKER", "/app/backend/data/.bootstrapped_chat_params"
 )
+DISCOVERY_CACHE_PATH = Path(
+    os.getenv(
+        "MITTWALD_DISCOVERY_CACHE_PATH",
+        "/app/backend/data/mittwald-models-discovery.json",
+    )
+)
 
-# Env-controlled "desired defaults"
-DEFAULTS = {
+# One-time bootstrap should overwrite factory defaults on first run so custom values
+# really take effect. It still only runs once due to the marker file.
+FORCE_OVERWRITE = os.getenv("OWUI_BOOTSTRAP_FORCE", "true").strip().lower() == "true"
+
+# Optional model-aware defaults. Env vars still win when set explicitly.
+MODEL_PROFILES: Dict[str, Dict[str, Any]] = {
+    "ministral": {
+        "temperature": 0.1,
+        "top_p": 0.5,
+        "top_k": 10,
+        "repetition_penalty": 1.0,
+        "max_tokens": 4096,
+    },
+    "devstral": {
+        "temperature": 0.15,
+        "top_p": 0.5,
+        "top_k": 10,
+        "repetition_penalty": 1.0,
+        "max_tokens": 4096,
+    },
+    "qwen": {
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 20,
+        "repetition_penalty": 1.0,
+        "max_tokens": 8192,
+    },
+    "gpt-oss": {
+        "temperature": 0.2,
+        "top_p": 0.7,
+        "top_k": 20,
+        "repetition_penalty": 1.0,
+        "max_tokens": 8192,
+    },
+}
+
+FALLBACK_PROFILE: Dict[str, Any] = {
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "top_k": 20,
+    "repetition_penalty": 1.0,
+    "max_tokens": 4096,
+}
+
+ENV_DEFAULTS = {
     "temperature": os.getenv("OWUI_BOOTSTRAP_TEMPERATURE"),
     "top_p": os.getenv("OWUI_BOOTSTRAP_TOP_P"),
     "top_k": os.getenv("OWUI_BOOTSTRAP_TOP_K"),
@@ -32,13 +82,63 @@ def _coerce(v: Optional[str]):
         return v
 
 
-DESIRED: Dict[str, object] = {
-    k: _coerce(v) for k, v in DEFAULTS.items() if _coerce(v) is not None
-}
-
-
 def log(msg: str):
     print(f"[bootstrap-chat-params] {msg}", flush=True)
+
+
+def load_default_chat_model(discovery_cache_path: Path) -> Optional[str]:
+    try:
+        if not discovery_cache_path.exists():
+            return None
+        payload = json.loads(discovery_cache_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        classification = payload.get("classification", {})
+        if isinstance(classification, dict):
+            model = classification.get("default_chat_model")
+            if isinstance(model, str) and model.strip():
+                return model.strip()
+    except Exception:
+        return None
+    return None
+
+
+def pick_profile_key(model_name: Optional[str]) -> Optional[str]:
+    if not model_name:
+        return None
+    lowered = model_name.lower()
+    for key in MODEL_PROFILES:
+        if key in lowered:
+            return key
+    return None
+
+
+def build_desired_defaults() -> Dict[str, object]:
+    # Start with model-specific profile (if available), otherwise fallback.
+    discovered_model = load_default_chat_model(DISCOVERY_CACHE_PATH)
+    profile_key = pick_profile_key(discovered_model)
+    desired: Dict[str, Any] = (
+        MODEL_PROFILES.get(profile_key, FALLBACK_PROFILE).copy()
+        if profile_key
+        else FALLBACK_PROFILE.copy()
+    )
+
+    # Explicit env vars override model profile defaults.
+    for key, value in ENV_DEFAULTS.items():
+        coerced = _coerce(value)
+        if coerced is not None:
+            desired[key] = coerced
+
+    if discovered_model:
+        log(
+            f"Using chat defaults profile '{profile_key or 'fallback'}' for model '{discovered_model}'"
+        )
+    else:
+        log("No discovered default chat model found; using fallback chat defaults profile")
+    return desired
+
+
+DESIRED: Dict[str, object] = build_desired_defaults()
 
 
 def wait_for_db(path: str, timeout_s: int = 600):
@@ -114,13 +214,20 @@ def ensure_nested(d: dict, *path: str) -> dict:
 
 
 def update_user_settings_once(
-    conn: sqlite3.Connection, table: str, id_col: str, settings_col: str
+    conn: sqlite3.Connection,
+    table: str,
+    id_col: str,
+    settings_col: str,
+    desired: Optional[Dict[str, object]] = None,
+    force_overwrite: Optional[bool] = None,
 ) -> int:
     """
     Applies DESIRED keys only if missing under settings['chat']['params'].
     Returns number of updated rows.
     """
     updated = 0
+    desired_values = desired if desired is not None else DESIRED
+    overwrite = FORCE_OVERWRITE if force_overwrite is None else force_overwrite
     cur = conn.execute(f"SELECT {id_col}, {settings_col} FROM '{table}'")
     rows = cur.fetchall()
 
@@ -137,8 +244,12 @@ def update_user_settings_once(
         params = ensure_nested(base, "chat", "params")
 
         changed = False
-        for k, v in DESIRED.items():
-            if k not in params:
+        for k, v in desired_values.items():
+            if overwrite:
+                if params.get(k) != v:
+                    params[k] = v
+                    changed = True
+            elif k not in params:
                 params[k] = v
                 changed = True
 
@@ -198,7 +309,14 @@ def main():
             id_col = find_id_column(conn, users_table)
 
             conn.execute("BEGIN;")
-            n = update_user_settings_once(conn, users_table, id_col, settings_col)
+            n = update_user_settings_once(
+                conn,
+                users_table,
+                id_col,
+                settings_col,
+                desired=DESIRED,
+                force_overwrite=FORCE_OVERWRITE,
+            )
             conn.execute("COMMIT;")
             conn.close()
 
@@ -206,7 +324,8 @@ def main():
             with open(MARKER, "w", encoding="utf-8") as f:
                 f.write(f"done {int(time.time())}\n")
 
-            log(f"Injected defaults into {n} user(s). Done.")
+            mode = "overwrite" if FORCE_OVERWRITE else "missing-only"
+            log(f"Injected defaults into {n} user(s) ({mode} mode). Done.")
             return
 
         except sqlite3.OperationalError as e:
