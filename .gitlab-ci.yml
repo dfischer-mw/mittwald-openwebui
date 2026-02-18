@@ -26,20 +26,7 @@ prepare:data:
       if [ -n "${OWUI_VERSION:-}" ]; then
         RESOLVED_VERSION="${OWUI_VERSION}"
       else
-        RESOLVED_VERSION=$(python - <<'PY'
-import json
-import urllib.request
-
-url = "https://api.github.com/repos/open-webui/open-webui/releases?per_page=30"
-with urllib.request.urlopen(url, timeout=30) as response:
-    releases = json.load(response)
-
-for rel in releases:
-    if not rel.get("draft") and not rel.get("prerelease"):
-        print(rel.get("tag_name", ""))
-        break
-PY
-)
+        RESOLVED_VERSION="$(python3 -c "import json, urllib.request; releases = json.load(urllib.request.urlopen('https://api.github.com/repos/open-webui/open-webui/releases?per_page=30', timeout=30)); print(next((r.get('tag_name', '') for r in releases if not r.get('draft') and not r.get('prerelease')), ''))")"
       fi
 
       if [ -z "${RESOLVED_VERSION}" ]; then
@@ -50,52 +37,22 @@ PY
       DATE_TAG="$(date -u +%Y%m%d)"
       IMAGE_REF="${REGISTRY}/${IMAGE_NAME}"
 
-      cat > .tmp/ci.env <<ENVVARS
-OWUI_VERSION=${RESOLVED_VERSION}
-IMAGE_REF=${IMAGE_REF}
-VERSION_TAG=${RESOLVED_VERSION}
-DATED_TAG=${RESOLVED_VERSION}-${DATE_TAG}
-PACKAGE_LINK=https://github.com/orgs/mittwald/packages/container/package/openwebui
-PULL_LINK=https://ghcr.io/v2/mittwald/openwebui/manifests/${RESOLVED_VERSION}-${DATE_TAG}
-ENVVARS
+      {
+        echo "OWUI_VERSION=${RESOLVED_VERSION}"
+        echo "IMAGE_REF=${IMAGE_REF}"
+        echo "VERSION_TAG=${RESOLVED_VERSION}"
+        echo "DATED_TAG=${RESOLVED_VERSION}-${DATE_TAG}"
+        echo "PACKAGE_LINK=https://github.com/orgs/mittwald/packages/container/package/openwebui"
+        echo "PULL_LINK=https://ghcr.io/v2/mittwald/openwebui/manifests/${RESOLVED_VERSION}-${DATE_TAG}"
+      } > .tmp/ci.env
 
     - python3 scripts/scrape_huggingface.py > .tmp/config.json
-    - |
-      python3 - <<'PY'
-import json
-from pathlib import Path
-
-config = json.loads(Path('.tmp/config.json').read_text())
-lines = [
-    f"OWUI_BOOTSTRAP_TEMPERATURE={config['temperature']}",
-    f"OWUI_BOOTSTRAP_TOP_P={config['top_p']}",
-    f"OWUI_BOOTSTRAP_TOP_K={config['top_k']}",
-    f"OWUI_BOOTSTRAP_REPETITION_PENALTY={config['repetition_penalty']}",
-    f"OWUI_BOOTSTRAP_MAX_TOKENS={config['max_tokens']}",
-]
-Path('.tmp/bootstrap.env').write_text("\n".join(lines) + "\n")
-PY
+    - python3 -c 'import json; from pathlib import Path; config = json.loads(Path(".tmp/config.json").read_text()); Path(".tmp/bootstrap.env").write_text("OWUI_BOOTSTRAP_TEMPERATURE={0}\nOWUI_BOOTSTRAP_TOP_P={1}\nOWUI_BOOTSTRAP_TOP_K={2}\nOWUI_BOOTSTRAP_REPETITION_PENALTY={3}\nOWUI_BOOTSTRAP_MAX_TOKENS={4}\n".format(config["temperature"], config["top_p"], config["top_k"], config["repetition_penalty"], config["max_tokens"]))'
     - |
       if [ -n "${MITTWALD_API_TOKEN:-}" ]; then
         python3 scripts/scrape_mittwald_portal.py "${MITTWALD_DEV_PORTAL}" -o .tmp/models.json
       else
-        cat > .tmp/models.json <<'JSON'
-{
-  "models": [],
-  "changes": {
-    "added": [],
-    "removed": [],
-    "modified": [],
-    "has_changes": false
-  },
-  "metadata": {
-    "scraped_at": null,
-    "portal_url": "https://dev.mittwald.ai",
-    "model_count": 0,
-    "note": "MITTWALD_API_TOKEN not configured; scraping skipped"
-  }
-}
-JSON
+        python3 -c 'import json; from pathlib import Path; Path(".tmp/models.json").write_text(json.dumps({"models": [], "changes": {"added": [], "removed": [], "modified": [], "has_changes": False}, "metadata": {"scraped_at": None, "portal_url": "https://dev.mittwald.ai", "model_count": 0, "note": "MITTWALD_API_TOKEN not configured; scraping skipped"}}, indent=2))'
       fi
   artifacts:
     expire_in: 1 week
@@ -157,19 +114,19 @@ build:test:publish:
         DIGEST="not-pushed"
       fi
 
-      cat > build-summary.md <<SUMMARY
-# mittwald/openwebui build result
-
-- Image: ${IMAGE_REF}
-- Tags: ${DATED_TAG}, ${VERSION_TAG}, latest
-- Digest: ${DIGEST}
-- Package link: ${PACKAGE_LINK}
-- Pull link: ${PULL_LINK}
-
-## Pull
-
-docker pull ${IMAGE_REF}:${DATED_TAG}
-SUMMARY
+      {
+        echo "# mittwald/openwebui build result"
+        echo ""
+        echo "- Image: ${IMAGE_REF}"
+        echo "- Tags: ${DATED_TAG}, ${VERSION_TAG}, latest"
+        echo "- Digest: ${DIGEST}"
+        echo "- Package link: ${PACKAGE_LINK}"
+        echo "- Pull link: ${PULL_LINK}"
+        echo ""
+        echo "## Pull"
+        echo ""
+        echo "docker pull ${IMAGE_REF}:${DATED_TAG}"
+      } > build-summary.md
 
       cat build-summary.md
   artifacts:
