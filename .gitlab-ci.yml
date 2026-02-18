@@ -1,0 +1,180 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+stages:
+  - prepare
+  - test
+  - build
+
+variables:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: mittwald/openwebui
+  MITTWALD_DEV_PORTAL: https://dev.mittwald.ai
+
+prepare:data:
+  stage: prepare
+  image: python:3.12-slim
+  script:
+    - set -euo pipefail
+    - python -m pip install --upgrade pip
+    - pip install requests beautifulsoup4
+    - mkdir -p .tmp
+    - |
+      if [ -n "${OWUI_VERSION:-}" ]; then
+        RESOLVED_VERSION="${OWUI_VERSION}"
+      else
+        RESOLVED_VERSION=$(python - <<'PY'
+import json
+import urllib.request
+
+url = "https://api.github.com/repos/open-webui/open-webui/releases?per_page=30"
+with urllib.request.urlopen(url, timeout=30) as response:
+    releases = json.load(response)
+
+for rel in releases:
+    if not rel.get("draft") and not rel.get("prerelease"):
+        print(rel.get("tag_name", ""))
+        break
+PY
+)
+      fi
+
+      if [ -z "${RESOLVED_VERSION}" ]; then
+        echo "Failed to resolve stable Open WebUI version" >&2
+        exit 1
+      fi
+
+      DATE_TAG="$(date -u +%Y%m%d)"
+      IMAGE_REF="${REGISTRY}/${IMAGE_NAME}"
+
+      cat > .tmp/ci.env <<ENVVARS
+OWUI_VERSION=${RESOLVED_VERSION}
+IMAGE_REF=${IMAGE_REF}
+VERSION_TAG=${RESOLVED_VERSION}
+DATED_TAG=${RESOLVED_VERSION}-${DATE_TAG}
+PACKAGE_LINK=https://github.com/orgs/mittwald/packages/container/package/openwebui
+PULL_LINK=https://ghcr.io/v2/mittwald/openwebui/manifests/${RESOLVED_VERSION}-${DATE_TAG}
+ENVVARS
+
+    - python3 scripts/scrape_huggingface.py > .tmp/config.json
+    - |
+      python3 - <<'PY'
+import json
+from pathlib import Path
+
+config = json.loads(Path('.tmp/config.json').read_text())
+lines = [
+    f"OWUI_BOOTSTRAP_TEMPERATURE={config['temperature']}",
+    f"OWUI_BOOTSTRAP_TOP_P={config['top_p']}",
+    f"OWUI_BOOTSTRAP_TOP_K={config['top_k']}",
+    f"OWUI_BOOTSTRAP_REPETITION_PENALTY={config['repetition_penalty']}",
+    f"OWUI_BOOTSTRAP_MAX_TOKENS={config['max_tokens']}",
+]
+Path('.tmp/bootstrap.env').write_text("\n".join(lines) + "\n")
+PY
+    - |
+      if [ -n "${MITTWALD_API_TOKEN:-}" ]; then
+        python3 scripts/scrape_mittwald_portal.py "${MITTWALD_DEV_PORTAL}" -o .tmp/models.json
+      else
+        cat > .tmp/models.json <<'JSON'
+{
+  "models": [],
+  "changes": {
+    "added": [],
+    "removed": [],
+    "modified": [],
+    "has_changes": false
+  },
+  "metadata": {
+    "scraped_at": null,
+    "portal_url": "https://dev.mittwald.ai",
+    "model_count": 0,
+    "note": "MITTWALD_API_TOKEN not configured; scraping skipped"
+  }
+}
+JSON
+      fi
+  artifacts:
+    expire_in: 1 week
+    reports:
+      dotenv: .tmp/ci.env
+    paths:
+      - .tmp/config.json
+      - .tmp/bootstrap.env
+      - .tmp/models.json
+
+python:checks:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - set -euo pipefail
+    - python -m pip install --upgrade pip
+    - pip install pytest requests beautifulsoup4
+    - python3 -m py_compile scripts/*.py bootstrap/*.py
+    - python3 -m pytest -q tests
+
+build:test:publish:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+  needs:
+    - job: prepare:data
+      artifacts: true
+    - job: python:checks
+  script:
+    - set -euo pipefail
+    - apk add --no-cache bash curl
+    - test -f .tmp/bootstrap.env
+    - test -f .tmp/models.json
+    - docker version
+    - docker build --build-arg OWUI_VERSION="${OWUI_VERSION}" -t "${IMAGE_REF}:${DATED_TAG}" .
+    - chmod +x scripts/test_image.sh
+    - ./scripts/test_image.sh "${IMAGE_REF}:${DATED_TAG}"
+    - |
+      if [ "${PUSH_IMAGE:-true}" = "true" ]; then
+        : "${GHCR_USERNAME:?Set GHCR_USERNAME CI/CD variable}"
+        : "${GHCR_TOKEN:?Set GHCR_TOKEN CI/CD variable}"
+
+        echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+
+        docker tag "${IMAGE_REF}:${DATED_TAG}" "${IMAGE_REF}:${VERSION_TAG}"
+        docker tag "${IMAGE_REF}:${DATED_TAG}" "${IMAGE_REF}:latest"
+
+        docker push "${IMAGE_REF}:${DATED_TAG}"
+        docker push "${IMAGE_REF}:${VERSION_TAG}"
+        docker push "${IMAGE_REF}:latest"
+
+        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE_REF}:${DATED_TAG}")
+      else
+        DIGEST="not-pushed"
+      fi
+
+      cat > build-summary.md <<SUMMARY
+# mittwald/openwebui build result
+
+- Image: ${IMAGE_REF}
+- Tags: ${DATED_TAG}, ${VERSION_TAG}, latest
+- Digest: ${DIGEST}
+- Package link: ${PACKAGE_LINK}
+- Pull link: ${PULL_LINK}
+
+## Pull
+
+docker pull ${IMAGE_REF}:${DATED_TAG}
+SUMMARY
+
+      cat build-summary.md
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - build-summary.md
+      - .tmp/bootstrap.env
+      - .tmp/models.json

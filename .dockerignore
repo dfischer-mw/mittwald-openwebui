@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+SETUP.md
+.env.example
+
+# CI/CD
+.github
+
+# Tests and Scripts
+scripts/test_image.sh
+
+# Cache
+.cache
+*.pyc
+__pycache__
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+models.json
+
+# Makefile and docs (not needed in image)
+Makefile
+CLAUDE.md
+AGENTS.md
+todo.txt

@@ -1,0 +1,263 @@
+name: Build and Publish mittwald/openwebui
+
+on:
+  schedule:
+    - cron: '17 2 * * *' # Daily at 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      owui_version:
+        description: 'Open WebUI version tag (empty = latest stable release)'
+        required: false
+        default: ''
+      push_image:
+        description: 'Push image to GHCR'
+        type: boolean
+        default: true
+
+concurrency:
+  group: openwebui-ghcr
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: mittwald/openwebui
+  MITTWALD_DEV_PORTAL: https://dev.mittwald.ai
+
+jobs:
+  prepare:
+    name: Resolve release and scrape settings
+    runs-on: ubuntu-latest
+    outputs:
+      owui_version: ${{ steps.version.outputs.owui_version }}
+      image_ref: ${{ steps.image.outputs.image_ref }}
+      config_json: ${{ steps.config.outputs.config_json }}
+      model_changes: ${{ steps.models.outputs.model_changes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps for scrapers
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+
+      - name: Resolve latest stable Open WebUI release
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.owui_version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION}"
+          else
+            VERSION=$(curl -fsSL "https://api.github.com/repos/open-webui/open-webui/releases?per_page=30" \
+              | jq -r '[.[] | select((.draft | not) and (.prerelease | not))][0].tag_name')
+          fi
+
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "null" ]; then
+            echo "Could not resolve stable Open WebUI release" >&2
+            exit 1
+          fi
+
+          echo "owui_version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
+
+      - name: Build image ref
+        id: image
+        run: |
+          IMAGE_REF="${REGISTRY}/${IMAGE_NAME}"
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+          echo "Image ref: ${IMAGE_REF}"
+
+      - name: Scrape Hugging Face recommended settings
+        id: config
+        run: |
+          mkdir -p .tmp
+          python3 scripts/scrape_huggingface.py > .tmp/config.json
+          echo "config_json=$(jq -c . .tmp/config.json)" >> "$GITHUB_OUTPUT"
+          jq -r '
+            "OWUI_BOOTSTRAP_TEMPERATURE=\(.temperature)",
+            "OWUI_BOOTSTRAP_TOP_P=\(.top_p)",
+            "OWUI_BOOTSTRAP_TOP_K=\(.top_k)",
+            "OWUI_BOOTSTRAP_REPETITION_PENALTY=\(.repetition_penalty)",
+            "OWUI_BOOTSTRAP_MAX_TOKENS=\(.max_tokens)"
+          ' .tmp/config.json > .tmp/bootstrap.env
+
+      - name: Scrape Mittwald models (optional)
+        id: models
+        env:
+          MITTWALD_API_TOKEN: ${{ secrets.MITTWALD_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp
+
+          if [ -n "${MITTWALD_API_TOKEN:-}" ]; then
+            python3 scripts/scrape_mittwald_portal.py "${MITTWALD_DEV_PORTAL}" -o .tmp/models.json
+          else
+            cat > .tmp/models.json << 'JSON'
+          {
+            "models": [],
+            "changes": {
+              "added": [],
+              "removed": [],
+              "modified": [],
+              "has_changes": false
+            },
+            "metadata": {
+              "scraped_at": null,
+              "portal_url": "https://dev.mittwald.ai",
+              "model_count": 0,
+              "note": "MITTWALD_API_TOKEN not configured; scraping skipped"
+            }
+          }
+JSON
+          fi
+
+          echo "model_changes=$(jq -c .changes .tmp/models.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload prepared data
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-data
+          path: |
+            .tmp/config.json
+            .tmp/bootstrap.env
+            .tmp/models.json
+
+  test:
+    name: Run all non-container tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests beautifulsoup4
+
+      - name: Run lint and unit tests
+        run: make check
+
+  build_test_push:
+    name: Build, integration test, and publish image
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ needs.prepare.outputs.image_ref }}
+      version_tag: ${{ steps.tags.outputs.version_tag }}
+      dated_tag: ${{ steps.tags.outputs.dated_tag }}
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download prepared data
+        uses: actions/download-artifact@v4
+        with:
+          name: prepared-data
+          path: .tmp
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.owui_version }}"
+          DATE_TAG="$(date -u +%Y%m%d)"
+
+          echo "version_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "dated_tag=${VERSION}-${DATE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image for local integration tests
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            OWUI_VERSION=${{ needs.prepare.outputs.owui_version }}
+          load: true
+          push: false
+          tags: ${{ needs.prepare.outputs.image_ref }}:${{ steps.tags.outputs.dated_tag }}
+
+      - name: Run container integration tests
+        run: |
+          chmod +x scripts/test_image.sh
+          ./scripts/test_image.sh "${{ needs.prepare.outputs.image_ref }}:${{ steps.tags.outputs.dated_tag }}"
+
+      - name: Publish tags to GHCR
+        if: ${{ github.event_name == 'schedule' || inputs.push_image }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ needs.prepare.outputs.image_ref }}"
+          VERSION_TAG="${{ steps.tags.outputs.version_tag }}"
+          DATED_TAG="${{ steps.tags.outputs.dated_tag }}"
+
+          docker tag "${IMAGE}:${DATED_TAG}" "${IMAGE}:${VERSION_TAG}"
+          docker tag "${IMAGE}:${DATED_TAG}" "${IMAGE}:latest"
+
+          docker push "${IMAGE}:${DATED_TAG}"
+          docker push "${IMAGE}:${VERSION_TAG}"
+          docker push "${IMAGE}:latest"
+
+      - name: Resolve pushed digest
+        id: digest
+        if: ${{ github.event_name == 'schedule' || inputs.push_image }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ needs.prepare.outputs.image_ref }}:${{ steps.tags.outputs.dated_tag }}"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}")
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize image links
+        run: |
+          IMAGE="${{ needs.prepare.outputs.image_ref }}"
+          VERSION_TAG="${{ steps.tags.outputs.version_tag }}"
+          DATED_TAG="${{ steps.tags.outputs.dated_tag }}"
+
+          {
+            echo "# mittwald/openwebui build result"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Tags: \`${DATED_TAG}\`, \`${VERSION_TAG}\`, \`latest\`"
+            echo "- Package link: https://github.com/orgs/mittwald/packages/container/package/openwebui"
+            echo "- Pull link: https://ghcr.io/v2/mittwald/openwebui/manifests/${DATED_TAG}"
+            if [ -n "${{ steps.digest.outputs.digest }}" ]; then
+              echo "- Digest: \`${{ steps.digest.outputs.digest }}\`"
+            fi
+            echo
+            echo "## Pull"
+            echo '\`\`\`bash'
+            echo "docker pull ${IMAGE}:${DATED_TAG}"
+            echo '\`\`\`'
+            echo
+            echo "## Bootstrap Env"
+            echo '\`\`\`env'
+            cat .tmp/bootstrap.env
+            echo '\`\`\`'
+            echo
+            echo "## Mittwald Model Changes"
+            echo '\`\`\`json'
+            cat .tmp/models.json | jq '.changes'
+            echo '\`\`\`'
+          } >> "$GITHUB_STEP_SUMMARY"
