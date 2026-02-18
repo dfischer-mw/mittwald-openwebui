@@ -2,15 +2,13 @@
 
 This repository builds and publishes a patched Open WebUI image to GitHub Container Registry as:
 
-- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>-<yyyymmdd>`
-- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>`
-- `ghcr.io/<repo-owner>/<repo-name>:latest`
+- `ghcr.io/<repo-owner>/openwebui:<open-webui-version>-<yyyymmdd>`
+- `ghcr.io/<repo-owner>/openwebui:<open-webui-version>`
+- `ghcr.io/<repo-owner>/openwebui:latest`
 
 Package link:
-- `https://github.com/users/<repo-owner>/packages/container/package/<repo-name>`
-- `https://github.com/orgs/<repo-owner>/packages/container/package/<repo-name>`
-
-Override target image name with repository variable `GHCR_IMAGE_NAME` if needed.
+- `https://github.com/users/<repo-owner>/packages/container/package/openwebui`
+- `https://github.com/orgs/<repo-owner>/packages/container/package/openwebui`
 
 ## What is implemented
 
@@ -76,7 +74,7 @@ docker run -d -p 3000:8080 \\
   -v open-webui-data:/app/backend/data \\
   -e MITTWALD_OPENAI_API_KEY=sk-... \\
   -e MITTWALD_OPENAI_BASE_URL=https://llm.aihosting.mittwald.de/v1 \\
-  ghcr.io/<repo-owner>/<repo-name>:latest
+  ghcr.io/<repo-owner>/openwebui:latest
 ```
 
 ## Local image push to GHCR

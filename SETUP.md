@@ -2,8 +2,7 @@
 
 ## 1. GitHub Actions setup
 
-The workflow uses GHCR and pushes to `ghcr.io/<repo-owner>/<repo-name>` by default.
-Set repository variable `GHCR_IMAGE_NAME` to override (example: `mittwald/openwebui`).
+The workflow uses GHCR and pushes to `ghcr.io/<repo-owner>/openwebui` by default.
 Every successful publish pushes three tags: `<version>-<date>`, `<version>`, and `latest`.
 
 ### Required
@@ -33,10 +32,10 @@ Every successful publish pushes three tags: `<version>-<date>`, `<version>`, and
 After successful CI run:
 
 - Package page:
-  - `https://github.com/users/<repo-owner>/packages/container/package/<repo-name>`
-  - `https://github.com/orgs/<repo-owner>/packages/container/package/<repo-name>`
+  - `https://github.com/users/<repo-owner>/packages/container/package/openwebui`
+  - `https://github.com/orgs/<repo-owner>/packages/container/package/openwebui`
 - Pull example:
 
 ```bash
-docker pull ghcr.io/<repo-owner>/<repo-name>:<tag>
+docker pull ghcr.io/<repo-owner>/openwebui:<tag>
 ```

@@ -27,7 +27,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ vars.GHCR_IMAGE_NAME || github.repository }}
+  IMAGE_NAME: ${{ github.repository_owner }}/openwebui
   MITTWALD_DEV_PORTAL: https://dev.mittwald.ai
 
 jobs:
