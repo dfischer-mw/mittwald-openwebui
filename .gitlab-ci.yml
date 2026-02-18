@@ -13,6 +13,7 @@ variables:
   REGISTRY: ghcr.io
   IMAGE_NAME: mittwald/openwebui
   MITTWALD_DEV_PORTAL: https://dev.mittwald.ai
+  PUSH_TARGET: github
 
 prepare:data:
   stage: prepare
@@ -35,15 +36,23 @@ prepare:data:
       fi
 
       DATE_TAG="$(date -u +%Y%m%d)"
-      IMAGE_REF="${REGISTRY}/${IMAGE_NAME}"
+      if [ "${PUSH_TARGET}" = "gitlab" ]; then
+        IMAGE_REF="${CI_REGISTRY_IMAGE}"
+        PACKAGE_LINK="${CI_PROJECT_URL}/-/container_registry"
+        PULL_LINK="${CI_REGISTRY_IMAGE}:${RESOLVED_VERSION}-${DATE_TAG}"
+      else
+        IMAGE_REF="${REGISTRY}/${IMAGE_NAME}"
+        PACKAGE_LINK="https://github.com/orgs/mittwald/packages/container/package/openwebui"
+        PULL_LINK="https://ghcr.io/v2/mittwald/openwebui/manifests/${RESOLVED_VERSION}-${DATE_TAG}"
+      fi
 
       {
         echo "OWUI_VERSION=${RESOLVED_VERSION}"
         echo "IMAGE_REF=${IMAGE_REF}"
         echo "VERSION_TAG=${RESOLVED_VERSION}"
         echo "DATED_TAG=${RESOLVED_VERSION}-${DATE_TAG}"
-        echo "PACKAGE_LINK=https://github.com/orgs/mittwald/packages/container/package/openwebui"
-        echo "PULL_LINK=https://ghcr.io/v2/mittwald/openwebui/manifests/${RESOLVED_VERSION}-${DATE_TAG}"
+        echo "PACKAGE_LINK=${PACKAGE_LINK}"
+        echo "PULL_LINK=${PULL_LINK}"
       } > .tmp/ci.env
 
     - python3 scripts/scrape_huggingface.py > .tmp/config.json
@@ -92,10 +101,19 @@ build:test:publish:
     - ./scripts/test_image.sh "${IMAGE_REF}:${DATED_TAG}"
     - |
       if [ "${PUSH_IMAGE:-true}" = "true" ]; then
-        : "${GHCR_USERNAME:?Set GHCR_USERNAME CI/CD variable}"
-        : "${GHCR_TOKEN:?Set GHCR_TOKEN CI/CD variable}"
-
-        echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+        if [ "${PUSH_TARGET}" = "gitlab" ]; then
+          GL_REGISTRY_USER="${INTERNAL_GITLAB_REGISTRY_USER:-${GITLAB_REGISTRY_USER:-${CI_REGISTRY_USER:-}}}"
+          GL_REGISTRY_PASSWORD="${INTERNAL_GITLAB_REGISTRY_PASSWORD:-${GITLAB_REGISTRY_PASSWORD:-${CI_REGISTRY_PASSWORD:-}}}"
+          GL_REGISTRY_HOST="${GITLAB_REGISTRY_HOST:-${CI_REGISTRY}}"
+          : "${GL_REGISTRY_USER:?Set INTERNAL_GITLAB_REGISTRY_USER or CI_REGISTRY_USER}"
+          : "${GL_REGISTRY_PASSWORD:?Set INTERNAL_GITLAB_REGISTRY_PASSWORD or CI_REGISTRY_PASSWORD}"
+          : "${GL_REGISTRY_HOST:?Set GITLAB_REGISTRY_HOST or CI_REGISTRY}"
+          echo "${GL_REGISTRY_PASSWORD}" | docker login "${GL_REGISTRY_HOST}" -u "${GL_REGISTRY_USER}" --password-stdin
+        else
+          : "${GHCR_USERNAME:?Set GHCR_USERNAME CI/CD variable}"
+          : "${GHCR_TOKEN:?Set GHCR_TOKEN CI/CD variable}"
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+        fi
 
         docker tag "${IMAGE_REF}:${DATED_TAG}" "${IMAGE_REF}:${VERSION_TAG}"
         docker tag "${IMAGE_REF}:${DATED_TAG}" "${IMAGE_REF}:latest"
