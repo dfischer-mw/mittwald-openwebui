@@ -59,6 +59,38 @@ make check
 make test-full
 ```
 
+## Local test on port 10001
+
+```bash
+docker pull ghcr.io/dfischer-mw/openwebui:latest
+
+docker run -d \
+  --name openwebui-local-10001 \
+  -p 10001:8080 \
+  -v openwebui-local-10001-data:/app/backend/data \
+  -e MITTWALD_OPENAI_API_KEY=sk-... \
+  -e MITTWALD_OPENAI_BASE_URL=https://llm.aihosting.mittwald.de/v1 \
+  -e MITTWALD_VERIFY_MODEL_ENDPOINTS=true \
+  ghcr.io/dfischer-mw/openwebui:latest
+```
+
+Check readiness:
+
+```bash
+curl -f http://127.0.0.1:10001/health/liveness
+```
+
+Open WebUI:
+
+- `http://127.0.0.1:10001`
+
+Cleanup:
+
+```bash
+docker rm -f openwebui-local-10001
+docker volume rm openwebui-local-10001-data
+```
+
 ## Mittwald-ready runtime
 
 Run the image with Mittwald API key and it will auto-configure Open WebUI on startup:
