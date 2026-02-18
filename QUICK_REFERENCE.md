@@ -21,14 +21,16 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 
 ## Published image
 
-- `ghcr.io/mittwald/openwebui:latest`
-- `ghcr.io/mittwald/openwebui:<open-webui-version>`
-- `ghcr.io/mittwald/openwebui:<open-webui-version>-<yyyymmdd>`
+- `ghcr.io/<repo-owner>/<repo-name>:latest`
+- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>`
+- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>-<yyyymmdd>`
 
 ## Links
 
-- Package: https://github.com/orgs/mittwald/packages/container/package/openwebui
-- Registry API (example tag): `https://ghcr.io/v2/mittwald/openwebui/manifests/<tag>`
+- Package:
+  - `https://github.com/users/<repo-owner>/packages/container/package/<repo-name>`
+  - `https://github.com/orgs/<repo-owner>/packages/container/package/<repo-name>`
+- Registry API (example tag): `https://ghcr.io/v2/<repo-owner>/<repo-name>/manifests/<tag>`
 
 ## Required variables
 

@@ -1,4 +1,4 @@
-name: Build and Publish mittwald/openwebui
+name: Build and Publish OpenWebUI Image
 
 on:
   push:
@@ -27,7 +27,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: mittwald/openwebui
+  IMAGE_NAME: ${{ vars.GHCR_IMAGE_NAME || github.repository }}
   MITTWALD_DEV_PORTAL: https://dev.mittwald.ai
 
 jobs:
@@ -225,14 +225,18 @@ jobs:
           IMAGE="${{ needs.prepare.outputs.image_ref }}"
           VERSION_TAG="${{ steps.tags.outputs.version_tag }}"
           DATED_TAG="${{ steps.tags.outputs.dated_tag }}"
+          IMAGE_PATH="${IMAGE#${REGISTRY}/}"
+          IMAGE_OWNER="${IMAGE_PATH%%/*}"
+          IMAGE_PACKAGE="${IMAGE_PATH#*/}"
 
           {
-            echo "# mittwald/openwebui build result"
+            echo "# OpenWebUI build result"
             echo
             echo "- Image: \`${IMAGE}\`"
             echo "- Tags: \`${DATED_TAG}\`, \`${VERSION_TAG}\`, \`latest\`"
-            echo "- Package link: https://github.com/orgs/mittwald/packages/container/package/openwebui"
-            echo "- Pull link: https://ghcr.io/v2/mittwald/openwebui/manifests/${DATED_TAG}"
+            echo "- Pull link: https://ghcr.io/v2/${IMAGE_PATH}/manifests/${DATED_TAG}"
+            echo "- Package link (org): https://github.com/orgs/${IMAGE_OWNER}/packages/container/package/${IMAGE_PACKAGE}"
+            echo "- Package link (user): https://github.com/users/${IMAGE_OWNER}/packages/container/package/${IMAGE_PACKAGE}"
             if [ -n "${{ steps.digest.outputs.digest }}" ]; then
               echo "- Digest: \`${{ steps.digest.outputs.digest }}\`"
             fi

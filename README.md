@@ -2,12 +2,15 @@
 
 This repository builds and publishes a patched Open WebUI image to GitHub Container Registry as:
 
-- `ghcr.io/mittwald/openwebui:<open-webui-version>-<yyyymmdd>`
-- `ghcr.io/mittwald/openwebui:<open-webui-version>`
-- `ghcr.io/mittwald/openwebui:latest`
+- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>-<yyyymmdd>`
+- `ghcr.io/<repo-owner>/<repo-name>:<open-webui-version>`
+- `ghcr.io/<repo-owner>/<repo-name>:latest`
 
 Package link:
-- https://github.com/orgs/mittwald/packages/container/package/openwebui
+- `https://github.com/users/<repo-owner>/packages/container/package/<repo-name>`
+- `https://github.com/orgs/<repo-owner>/packages/container/package/<repo-name>`
+
+Override target image name with repository variable `GHCR_IMAGE_NAME` if needed.
 
 ## What is implemented
 

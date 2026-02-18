@@ -2,7 +2,8 @@
 
 ## 1. GitHub Actions setup
 
-The workflow uses GHCR and pushes `ghcr.io/mittwald/openwebui`.
+The workflow uses GHCR and pushes to `ghcr.io/<repo-owner>/<repo-name>` by default.
+Set repository variable `GHCR_IMAGE_NAME` to override (example: `mittwald/openwebui`).
 
 ### Required
 
@@ -26,9 +27,11 @@ The workflow uses GHCR and pushes `ghcr.io/mittwald/openwebui`.
 
 After successful CI run:
 
-- Package page: https://github.com/orgs/mittwald/packages/container/package/openwebui
+- Package page:
+  - `https://github.com/users/<repo-owner>/packages/container/package/<repo-name>`
+  - `https://github.com/orgs/<repo-owner>/packages/container/package/<repo-name>`
 - Pull example:
 
 ```bash
-docker pull ghcr.io/mittwald/openwebui:<tag>
+docker pull ghcr.io/<repo-owner>/<repo-name>:<tag>
 ```
