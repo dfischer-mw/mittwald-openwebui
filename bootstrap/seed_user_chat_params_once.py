@@ -358,9 +358,24 @@ def update_user_settings_once(
             except Exception:
                 base = {}
 
-        params = ensure_nested(base, "chat", "params")
-
+        # Open WebUI reads global defaults from settings.params.
+        # Keep compatibility with older payloads by importing any legacy chat.params values.
         changed = False
+        params = base.get("params")
+        if not isinstance(params, dict):
+            params = {}
+            base["params"] = params
+            changed = True
+
+        legacy_chat = base.get("chat")
+        if isinstance(legacy_chat, dict):
+            legacy_params = legacy_chat.get("params")
+            if isinstance(legacy_params, dict):
+                for key, value in legacy_params.items():
+                    if key not in params:
+                        params[key] = value
+                        changed = True
+
         for k, v in desired_values.items():
             if overwrite:
                 if params.get(k) != v:

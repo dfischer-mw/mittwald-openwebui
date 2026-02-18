@@ -57,7 +57,7 @@ def test_update_user_settings_once_only_adds_missing_keys(tmp_path):
     db_path = tmp_path / "webui.db"
     conn = _create_users_db(db_path)
 
-    existing = {"chat": {"params": {"temperature": 0.15}}}
+    existing = {"params": {"temperature": 0.15}}
     empty_settings = {}
 
     conn.execute(
@@ -90,15 +90,15 @@ def test_update_user_settings_once_only_adds_missing_keys(tmp_path):
 
     row1 = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
     parsed1 = json.loads(row1)
-    assert parsed1["chat"]["params"]["temperature"] == 0.15
-    assert parsed1["chat"]["params"]["top_p"] == 0.9
-    assert parsed1["chat"]["params"]["top_k"] == 40
+    assert parsed1["params"]["temperature"] == 0.15
+    assert parsed1["params"]["top_p"] == 0.9
+    assert parsed1["params"]["top_k"] == 40
 
     row2 = conn.execute("SELECT settings FROM users WHERE id = 2").fetchone()[0]
     parsed2 = json.loads(row2)
-    assert parsed2["chat"]["params"]["temperature"] == 0.7
-    assert parsed2["chat"]["params"]["top_p"] == 0.9
-    assert parsed2["chat"]["params"]["top_k"] == 40
+    assert parsed2["params"]["temperature"] == 0.7
+    assert parsed2["params"]["top_p"] == 0.9
+    assert parsed2["params"]["top_k"] == 40
 
     conn.close()
 
@@ -107,7 +107,7 @@ def test_update_user_settings_once_overwrites_existing_when_enabled(tmp_path):
     db_path = tmp_path / "webui.db"
     conn = _create_users_db(db_path)
 
-    existing = {"chat": {"params": {"temperature": 0.7, "top_p": 0.9}}}
+    existing = {"params": {"temperature": 0.7, "top_p": 0.9}}
 
     conn.execute(
         "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
@@ -135,9 +135,41 @@ def test_update_user_settings_once_overwrites_existing_when_enabled(tmp_path):
 
     row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
     parsed = json.loads(row)
-    assert parsed["chat"]["params"]["temperature"] == 0.1
-    assert parsed["chat"]["params"]["top_p"] == 0.5
-    assert parsed["chat"]["params"]["top_k"] == 10
+    assert parsed["params"]["temperature"] == 0.1
+    assert parsed["params"]["top_p"] == 0.5
+    assert parsed["params"]["top_k"] == 10
+
+    conn.close()
+
+
+def test_update_user_settings_once_migrates_legacy_chat_params(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = _create_users_db(db_path)
+
+    existing = {"chat": {"params": {"temperature": 0.33, "top_p": 0.77}}}
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (1, "a@example.com", "admin", json.dumps(existing)),
+    )
+    conn.commit()
+
+    desired = {"top_k": 42}
+    updated = seed.update_user_settings_once(
+        conn,
+        "users",
+        "id",
+        "settings",
+        desired=desired,
+        force_overwrite=False,
+    )
+    conn.commit()
+
+    assert updated == 1
+    row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["params"]["temperature"] == 0.33
+    assert parsed["params"]["top_p"] == 0.77
+    assert parsed["params"]["top_k"] == 42
 
     conn.close()
 
