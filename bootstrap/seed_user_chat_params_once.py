@@ -16,6 +16,12 @@ DISCOVERY_CACHE_PATH = Path(
         "/app/backend/data/mittwald-models-discovery.json",
     )
 )
+HF_MODEL_HYPERPARAMS_PATH = Path(
+    os.getenv(
+        "HF_MODEL_HYPERPARAMS_PATH",
+        "/usr/local/share/openwebui/hf-model-hyperparameters.json",
+    )
+)
 
 # One-time bootstrap should overwrite factory defaults on first run so custom values
 # really take effect. It still only runs once due to the marker file.
@@ -71,6 +77,37 @@ ENV_DEFAULTS = {
     "max_tokens": os.getenv("OWUI_BOOTSTRAP_MAX_TOKENS"),
 }
 
+ALLOWED_CHAT_PARAM_KEYS = {
+    "temperature",
+    "top_p",
+    "top_k",
+    "min_p",
+    "repetition_penalty",
+    "repeat_penalty",
+    "presence_penalty",
+    "frequency_penalty",
+    "max_tokens",
+    "seed",
+    "mirostat",
+    "mirostat_eta",
+    "mirostat_tau",
+    "repeat_last_n",
+    "tfs_z",
+    "num_ctx",
+    "num_batch",
+    "num_thread",
+    "num_gpu",
+}
+
+CANONICAL_CHAT_PARAM_KEYS = {
+    "repeat_penalty": "repetition_penalty",
+    "max_new_tokens": "max_tokens",
+    "num_predict": "max_tokens",
+    "max_completion_tokens": "max_tokens",
+    "topp": "top_p",
+    "topk": "top_k",
+}
+
 
 def _coerce(v: Optional[str]):
     if v is None or v == "":
@@ -86,6 +123,12 @@ def _coerce(v: Optional[str]):
 
 def log(msg: str):
     print(f"[bootstrap-chat-params] {msg}", flush=True)
+
+
+def normalize_model_name(name: str) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
 def load_default_chat_model(discovery_cache_path: Path) -> Optional[str]:
@@ -115,6 +158,53 @@ def pick_profile_key(model_name: Optional[str]) -> Optional[str]:
     return None
 
 
+def load_hf_model_hyperparams(path: Path) -> Dict[str, Any]:
+    try:
+        if not path.exists():
+            return {}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def find_hf_model_config_for_model(
+    hf_payload: Dict[str, Any], model_name: Optional[str]
+) -> Dict[str, Any]:
+    if not model_name or not isinstance(hf_payload, dict):
+        return {}
+
+    models = hf_payload.get("models", {})
+    if not isinstance(models, dict):
+        return {}
+
+    # Direct key match first.
+    item = models.get(model_name)
+    if isinstance(item, dict):
+        return item
+
+    # Fallback to normalized lookup.
+    wanted = normalize_model_name(model_name)
+    for key, value in models.items():
+        if normalize_model_name(str(key)) != wanted:
+            continue
+        if isinstance(value, dict):
+            return value
+
+    return {}
+
+
+def extract_chat_params(raw: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in raw.items():
+        canonical_key = CANONICAL_CHAT_PARAM_KEYS.get(key, key)
+        if canonical_key not in ALLOWED_CHAT_PARAM_KEYS:
+            continue
+        if isinstance(value, (int, float)):
+            out[canonical_key] = value
+    return out
+
+
 def build_desired_defaults() -> Dict[str, object]:
     # Start with model-specific profile (if available), otherwise fallback.
     discovered_model = load_default_chat_model(DISCOVERY_CACHE_PATH)
@@ -124,6 +214,31 @@ def build_desired_defaults() -> Dict[str, object]:
         if profile_key
         else FALLBACK_PROFILE.copy()
     )
+
+    hf_payload = load_hf_model_hyperparams(HF_MODEL_HYPERPARAMS_PATH)
+    hf_model_config = find_hf_model_config_for_model(hf_payload, discovered_model)
+    hf_generation_params = extract_chat_params(
+        hf_model_config.get("generation_config", {})
+        if isinstance(hf_model_config, dict)
+        else {}
+    )
+    hf_hyperparams = extract_chat_params(
+        hf_model_config.get("hyperparameters", {})
+        if isinstance(hf_model_config, dict)
+        else {}
+    )
+    if hf_generation_params:
+        desired.update(hf_generation_params)
+        log(
+            f"Applied Hugging Face generation_config defaults for model '{discovered_model}' "
+            f"from {HF_MODEL_HYPERPARAMS_PATH}"
+        )
+    if hf_hyperparams:
+        desired.update(hf_hyperparams)
+        log(
+            f"Applied Hugging Face hyperparameters for model '{discovered_model}' "
+            f"from {HF_MODEL_HYPERPARAMS_PATH}"
+        )
 
     # Explicit env vars override model profile defaults.
     for key, value in ENV_DEFAULTS.items():

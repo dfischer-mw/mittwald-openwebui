@@ -5,6 +5,7 @@ FROM ghcr.io/open-webui/open-webui:${OWUI_VERSION}
 COPY bootstrap/start-with-bootstrap.sh /usr/local/bin/start-with-bootstrap.sh
 COPY bootstrap/seed_user_chat_params_once.py /usr/local/bin/seed_user_chat_params_once.py
 COPY bootstrap/seed_mittwald_openai_config.py /usr/local/bin/seed_mittwald_openai_config.py
+COPY bootstrap/hf-model-hyperparameters.json /usr/local/share/openwebui/hf-model-hyperparameters.json
 
 RUN chmod 755 /usr/local/bin/start-with-bootstrap.sh /usr/local/bin/seed_user_chat_params_once.py /usr/local/bin/seed_mittwald_openai_config.py
 
@@ -12,6 +13,7 @@ RUN chmod 755 /usr/local/bin/start-with-bootstrap.sh /usr/local/bin/seed_user_ch
 ENV OWUI_DB_PATH="/app/backend/data/webui.db"
 ENV OWUI_BOOTSTRAP_MARKER="/app/backend/data/.bootstrapped_chat_params"
 ENV MITTWALD_OPENAI_BASE_URL="https://llm.aihosting.mittwald.de/v1"
+ENV HF_MODEL_HYPERPARAMS_PATH="/usr/local/share/openwebui/hf-model-hyperparameters.json"
 
 # Expose default port
 EXPOSE 8080

@@ -81,20 +81,6 @@ jobs:
           echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
           echo "Image ref: ${IMAGE_REF}"
 
-      - name: Scrape Hugging Face recommended settings
-        id: config
-        run: |
-          mkdir -p .tmp
-          python3 scripts/scrape_huggingface.py > .tmp/config.json
-          echo "config_json=$(jq -c . .tmp/config.json)" >> "$GITHUB_OUTPUT"
-          jq -r '
-            "OWUI_BOOTSTRAP_TEMPERATURE=\(.temperature)",
-            "OWUI_BOOTSTRAP_TOP_P=\(.top_p)",
-            "OWUI_BOOTSTRAP_TOP_K=\(.top_k)",
-            "OWUI_BOOTSTRAP_REPETITION_PENALTY=\(.repetition_penalty)",
-            "OWUI_BOOTSTRAP_MAX_TOKENS=\(.max_tokens)"
-          ' .tmp/config.json > .tmp/bootstrap.env
-
       - name: Scrape Mittwald models (optional)
         id: models
         env:
@@ -111,6 +97,24 @@ jobs:
 
           echo "model_changes=$(jq -c .changes .tmp/models.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Scrape Hugging Face recommended settings (all discovered models)
+        id: config
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN || secrets.HF_TOKEN }}
+        run: |
+          mkdir -p .tmp
+          python3 scripts/scrape_huggingface.py --models-file .tmp/models.json > .tmp/config.json
+          cp .tmp/config.json .tmp/hf-model-hyperparameters.json
+          echo "config_json=$(jq -c . .tmp/config.json)" >> "$GITHUB_OUTPUT"
+          jq -r '
+            "OWUI_BOOTSTRAP_TEMPERATURE=\(.temperature)",
+            "OWUI_BOOTSTRAP_TOP_P=\(.top_p)",
+            "OWUI_BOOTSTRAP_TOP_K=\(.top_k)",
+            "OWUI_BOOTSTRAP_REPETITION_PENALTY=\(.repetition_penalty)",
+            "OWUI_BOOTSTRAP_MAX_TOKENS=\(.max_tokens)"
+          ' .tmp/config.json > .tmp/bootstrap.env
+
       - name: Upload prepared data
         uses: actions/upload-artifact@v4
         with:
@@ -119,6 +123,7 @@ jobs:
             .tmp/config.json
             .tmp/bootstrap.env
             .tmp/models.json
+            .tmp/hf-model-hyperparameters.json
 
   test:
     name: Run all non-container tests
@@ -160,6 +165,11 @@ jobs:
           name: prepared-data
           path: .tmp
 
+      - name: Materialize dynamic HF model hyperparameters for image build
+        run: |
+          test -f .tmp/hf-model-hyperparameters.json
+          cp .tmp/hf-model-hyperparameters.json bootstrap/hf-model-hyperparameters.json
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -192,6 +202,8 @@ jobs:
           tags: ${{ needs.prepare.outputs.image_ref }}:${{ steps.tags.outputs.dated_tag }}
 
       - name: Run container integration tests
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN }}
         run: |
           chmod +x scripts/test_image.sh
           ./scripts/test_image.sh "${{ needs.prepare.outputs.image_ref }}:${{ steps.tags.outputs.dated_tag }}"

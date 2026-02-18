@@ -34,6 +34,7 @@ Thumbs.db
 *.tmp
 *.bak
 *.orig
+.tmp/
 
 .ruff_cache/
 .pytest_cache/

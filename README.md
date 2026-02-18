@@ -17,6 +17,8 @@ Package link:
 - Stable Open WebUI release auto-resolution (or manual override)
 - Automatic publish of `:latest` on every successful push/scheduled run
 - Hugging Face settings scrape (`scripts/scrape_huggingface.py`)
+  - Scrapes all discovered model names dynamically
+  - Extracts README/card/generation parameters and captures `chat_template` metadata
 - Mittwald model scrape (`scripts/scrape_mittwald_portal.py`, optional token)
 - Bootstrap seeding in container startup:
   - One-time user chat defaults
@@ -39,7 +41,7 @@ Package link:
 No Docker Hub credentials are needed.
 
 - `GITHUB_TOKEN` is used automatically to push to GHCR.
-- Optional: `MITTWALD_API_TOKEN` and `HUGGINGFACE_TOKEN`
+- Optional: `MITTWALD_API_TOKEN` and `HF_TOKEN` (`HUGGINGFACE_TOKEN` is supported as fallback)
 
 ## GitHub behavior
 
@@ -101,6 +103,7 @@ Run the image with Mittwald API key and it will auto-configure Open WebUI on sta
 - Sets RAG embedding engine/model when an embedding model is available
 - Sets STT engine to `openai` and selects a Whisper model automatically
 - Seeds per-user chat defaults from model profile on first bootstrap
+  - Applies HF `generation_config` first, then HF explicit hyperparameters from card/README
   - `Ministral`: `temperature=0.1`, `top_p=0.5`, `top_k=10`
   - explicit `OWUI_BOOTSTRAP_*` env vars still override these values
 
