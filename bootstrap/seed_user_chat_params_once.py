@@ -20,6 +20,8 @@ DISCOVERY_CACHE_PATH = Path(
 # One-time bootstrap should overwrite factory defaults on first run so custom values
 # really take effect. It still only runs once due to the marker file.
 FORCE_OVERWRITE = os.getenv("OWUI_BOOTSTRAP_FORCE", "true").strip().lower() == "true"
+POLL_INTERVAL_SEC = int(os.getenv("OWUI_BOOTSTRAP_POLL_INTERVAL_SEC", "2"))
+MAX_WAIT_SECONDS = int(os.getenv("OWUI_BOOTSTRAP_MAX_WAIT_SECONDS", "86400"))
 
 # Optional model-aware defaults. Env vars still win when set explicitly.
 MODEL_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -275,8 +277,19 @@ def main():
     log(f"Waiting for DB: {DB_PATH}")
     wait_for_db(DB_PATH)
 
-    # keep retrying in case the app is migrating/locking sqlite
-    for attempt in range(1, 301):  # ~10 minutes (2s sleep)
+    # keep retrying in case the app is migrating/locking sqlite or user signs up later.
+    # MAX_WAIT_SECONDS <= 0 means "wait indefinitely".
+    start_ts = time.time()
+    attempt = 0
+    while True:
+        attempt += 1
+        elapsed = int(time.time() - start_ts)
+        if MAX_WAIT_SECONDS > 0 and elapsed > MAX_WAIT_SECONDS:
+            log(
+                f"Gave up waiting for writable DB/users after {elapsed}s; no changes applied."
+            )
+            return
+
         conn = None
         try:
             conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -287,14 +300,14 @@ def main():
                 log("Could not find users table yet; retrying...")
                 if conn:
                     conn.close()
-                time.sleep(2)
+                time.sleep(POLL_INTERVAL_SEC)
                 continue
 
             # Wait until the customer actually signs up
             if user_count(conn, users_table) < 1:
                 if conn:
                     conn.close()
-                time.sleep(2)
+                time.sleep(POLL_INTERVAL_SEC)
                 continue
 
             settings_col = find_settings_column(conn, users_table)
@@ -336,9 +349,7 @@ def main():
                     conn.close()
             except Exception:
                 pass
-            time.sleep(2)
-
-    log("Gave up waiting for a writable DB/users; no changes applied.")
+            time.sleep(POLL_INTERVAL_SEC)
 
 
 if __name__ == "__main__":

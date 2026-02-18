@@ -133,6 +133,8 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `MITTWALD_CONFIGURE_AUDIO_STT` (default: `true`)
 - `MITTWALD_DISCOVERY_TIMEOUT_SEC` (default: `20`)
 - `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults once)
+- `OWUI_BOOTSTRAP_MAX_WAIT_SECONDS` (default: `86400`, wait for first signup)
+- `OWUI_BOOTSTRAP_POLL_INTERVAL_SEC` (default: `2`)
 
 ## Testing scope
 
