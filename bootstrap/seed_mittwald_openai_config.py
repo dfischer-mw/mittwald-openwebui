@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,6 +41,12 @@ MITTWALD_VERIFY_MODEL_ENDPOINTS = (
 )
 MITTWALD_SET_RERANKING_MODEL = (
     os.getenv("MITTWALD_SET_RERANKING_MODEL", "false").strip().lower() == "true"
+)
+MITTWALD_STRICT_BOOTSTRAP = (
+    os.getenv("MITTWALD_STRICT_BOOTSTRAP", "false").strip().lower() == "true"
+)
+MITTWALD_REQUIRE_API_KEY = (
+    os.getenv("MITTWALD_REQUIRE_API_KEY", "false").strip().lower() == "true"
 )
 
 MITTWALD_CHAT_MODEL_HINT = os.getenv("MITTWALD_CHAT_MODEL_HINT", "").strip()
@@ -395,14 +402,23 @@ def _diff_models(previous_models: List[str], current_models: List[str]) -> Dict[
     }
 
 
-def main() -> None:
+def _previous_model_list(previous_discovery: Dict[str, Any]) -> List[str]:
+    models = previous_discovery.get("models", []) if isinstance(previous_discovery, dict) else []
+    return models if isinstance(models, list) else []
+
+
+def main() -> int:
     if not MITTWALD_API_KEY:
-        log("MITTWALD_OPENAI_API_KEY not set; skipping Mittwald provider bootstrap.")
-        return
+        message = "MITTWALD_OPENAI_API_KEY not set; skipping Mittwald provider bootstrap."
+        if MITTWALD_REQUIRE_API_KEY:
+            log(f"ERROR: {message}")
+            return 2
+        log(message)
+        return 0
 
     base_url = normalize_base_url(MITTWALD_BASE_URL)
     previous_discovery = load_previous_discovery(DISCOVERY_CACHE_PATH)
-    previous_models = previous_discovery.get("models", []) if isinstance(previous_discovery, dict) else []
+    previous_models = _previous_model_list(previous_discovery)
 
     discovered_models: List[str] = []
     classification: Dict[str, Any] = classify_models([])
@@ -425,13 +441,35 @@ def main() -> None:
         elif classification.get("embedding_candidates"):
             log("No embedding candidate passed /embeddings probe; keeping existing embedding config")
     except HTTPError as e:
-        log(
-            f"Model discovery failed with HTTP {e.code}: {e.reason}; keeping existing model_ids"
-        )
+        log(f"Model discovery failed with HTTP {e.code}: {e.reason}")
+        if previous_models:
+            discovered_models = previous_models
+            classification = previous_discovery.get("classification", classification)
+            log(
+                f"Falling back to {len(previous_models)} model(s) from previous discovery cache."
+            )
+        if MITTWALD_STRICT_BOOTSTRAP:
+            return 3
     except URLError as e:
-        log(f"Model discovery failed due to network error: {e}; keeping existing model_ids")
+        log(f"Model discovery failed due to network error: {e}")
+        if previous_models:
+            discovered_models = previous_models
+            classification = previous_discovery.get("classification", classification)
+            log(
+                f"Falling back to {len(previous_models)} model(s) from previous discovery cache."
+            )
+        if MITTWALD_STRICT_BOOTSTRAP:
+            return 3
     except Exception as e:
-        log(f"Model discovery failed: {e}; keeping existing model_ids")
+        log(f"Model discovery failed: {e}")
+        if previous_models:
+            discovered_models = previous_models
+            classification = previous_discovery.get("classification", classification)
+            log(
+                f"Falling back to {len(previous_models)} model(s) from previous discovery cache."
+            )
+        if MITTWALD_STRICT_BOOTSTRAP:
+            return 3
 
     existing = load_existing_config_from_db(DB_PATH)
     merged = merge_mittwald_openai_config(
@@ -470,7 +508,8 @@ def main() -> None:
     }
     write_json(DISCOVERY_CACHE_PATH, discovery_meta)
     log(f"Wrote model discovery cache to {DISCOVERY_CACHE_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

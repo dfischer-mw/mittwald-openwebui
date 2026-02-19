@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+log() {
+  echo "[bootstrap-entrypoint] $*" >&2
+}
+
 # Sync Mittwald OpenAI provider config into Open WebUI config (safe no-op without API key).
-python3 /usr/local/bin/seed_mittwald_openai_config.py || true
+if ! python3 /usr/local/bin/seed_mittwald_openai_config.py; then
+  if [ "${MITTWALD_FAIL_FAST:-false}" = "true" ]; then
+    log "Mittwald bootstrap failed and MITTWALD_FAIL_FAST=true; aborting container startup."
+    exit 1
+  fi
+  log "Mittwald bootstrap failed; continuing startup (MITTWALD_FAIL_FAST=false)."
+fi
 
 # Fast synchronous pass for existing users/chats so defaults are already correct
 # right after container restart. Keep timeouts very short to avoid blocking first boot.

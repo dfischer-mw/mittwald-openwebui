@@ -40,7 +40,17 @@ After successful CI run:
 docker pull ghcr.io/<repo-owner>/openwebui:<tag>
 ```
 
-## 3. Playwright MCP extension bridge
+## 3. Production runtime flags
+
+For customer deployments, set these container env vars:
+
+- `MITTWALD_REQUIRE_API_KEY=true`
+- `MITTWALD_STRICT_BOOTSTRAP=true`
+- `MITTWALD_FAIL_FAST=true`
+
+This makes startup fail immediately when Mittwald credentials/discovery are broken, instead of starting in a half-configured state.
+
+## 4. Playwright MCP extension bridge
 
 Repo-level MCP config is available in `.mcp.json`.
 

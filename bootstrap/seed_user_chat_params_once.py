@@ -24,8 +24,11 @@ HF_MODEL_HYPERPARAMS_PATH = Path(
 )
 
 # One-time bootstrap should overwrite factory defaults on first run so custom values
-# really take effect. It still only runs once due to the marker file.
+# really take effect. This pass does NOT re-run on every startup unless explicitly requested.
 FORCE_OVERWRITE = os.getenv("OWUI_BOOTSTRAP_FORCE", "true").strip().lower() == "true"
+REAPPLY_ON_START = (
+    os.getenv("OWUI_BOOTSTRAP_REAPPLY_ON_START", "false").strip().lower() == "true"
+)
 POLL_INTERVAL_SEC = int(os.getenv("OWUI_BOOTSTRAP_POLL_INTERVAL_SEC", "2"))
 MAX_WAIT_SECONDS = int(os.getenv("OWUI_BOOTSTRAP_MAX_WAIT_SECONDS", "86400"))
 DB_WAIT_TIMEOUT_SEC = int(os.getenv("OWUI_BOOTSTRAP_DB_WAIT_TIMEOUT_SEC", "600"))
@@ -570,11 +573,13 @@ def main():
         log("No OWUI_BOOTSTRAP_* env vars set; nothing to do.")
         return
 
-    if os.path.exists(MARKER) and not FORCE_OVERWRITE:
+    if os.path.exists(MARKER) and not REAPPLY_ON_START:
         log("Marker exists; bootstrap already done.")
         return
-    if os.path.exists(MARKER) and FORCE_OVERWRITE:
-        log("Marker exists but OWUI_BOOTSTRAP_FORCE=true; re-applying defaults.")
+    if os.path.exists(MARKER) and REAPPLY_ON_START:
+        log(
+            "Marker exists and OWUI_BOOTSTRAP_REAPPLY_ON_START=true; re-applying defaults."
+        )
 
     log(f"Waiting for DB: {DB_PATH}")
     try:

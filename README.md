@@ -122,6 +122,7 @@ Run the image with Mittwald API key and it will auto-configure Open WebUI on sta
   - Applies HF `generation_config` first, then HF explicit hyperparameters from card/README
   - `Ministral`: `temperature=0.1`, `top_p=0.5`, `top_k=10`
   - explicit `OWUI_BOOTSTRAP_*` env vars still override these values
+  - runtime request precedence: `payload > user settings > discovered defaults`
 
 ```bash
 docker run -d -p 3000:8080 \\
@@ -130,6 +131,27 @@ docker run -d -p 3000:8080 \\
   -e MITTWALD_OPENAI_BASE_URL=https://llm.aihosting.mittwald.de/v1 \\
   ghcr.io/<repo-owner>/openwebui:latest
 ```
+
+## Production profile
+
+For customer-facing deployments, run with fail-fast bootstrap so misconfiguration is visible immediately:
+
+```bash
+docker run -d -p 3000:8080 \
+  -v open-webui-data:/app/backend/data \
+  -e MITTWALD_OPENAI_API_KEY=sk-... \
+  -e MITTWALD_OPENAI_BASE_URL=https://llm.aihosting.mittwald.de/v1 \
+  -e MITTWALD_REQUIRE_API_KEY=true \
+  -e MITTWALD_STRICT_BOOTSTRAP=true \
+  -e MITTWALD_FAIL_FAST=true \
+  -e OWUI_BOOTSTRAP_FORCE=true \
+  ghcr.io/<repo-owner>/openwebui:<immutable-tag>
+```
+
+Recommended in production:
+- Pin immutable image tags (`<version>-<date>`) instead of `latest`.
+- Keep `MITTWALD_STRICT_BOOTSTRAP=true` + `MITTWALD_FAIL_FAST=true`.
+- Mount persistent volume at `/app/backend/data`.
 
 ## Local image push to GHCR
 
@@ -151,7 +173,11 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `MITTWALD_OPENAI_BASE_URL` (default: `https://llm.aihosting.mittwald.de/v1`)
 - `MITTWALD_CONFIGURE_AUDIO_STT` (default: `true`)
 - `MITTWALD_DISCOVERY_TIMEOUT_SEC` (default: `20`)
-- `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults once)
+- `MITTWALD_REQUIRE_API_KEY` (default: `false`, fail bootstrap when key is missing)
+- `MITTWALD_STRICT_BOOTSTRAP` (default: `false`, fail bootstrap when model discovery fails)
+- `MITTWALD_FAIL_FAST` (default: `false`, fail container start when Mittwald bootstrap fails)
+- `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults when bootstrap runs)
+- `OWUI_BOOTSTRAP_REAPPLY_ON_START` (default: `false`, set `true` only for forced re-seeding on every startup)
 - `OWUI_BOOTSTRAP_MAX_WAIT_SECONDS` (default: `86400`, wait for first signup)
 - `OWUI_BOOTSTRAP_POLL_INTERVAL_SEC` (default: `2`)
 - `OWUI_BOOTSTRAP_DB_WAIT_TIMEOUT_SEC` (default: `600`, DB readiness wait timeout per run)

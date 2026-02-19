@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,3 +206,75 @@ def test_merge_does_not_reindex_existing_openai_provider(monkeypatch):
     assert out["openai"]["api_configs"]["1"]["model_ids"] == [
         "Ministral-3-14B-Instruct-2512"
     ]
+
+
+def test_main_returns_error_when_api_key_required_and_missing(monkeypatch):
+    monkeypatch.setattr(seed, "MITTWALD_API_KEY", "")
+    monkeypatch.setattr(seed, "MITTWALD_REQUIRE_API_KEY", True)
+
+    rc = seed.main()
+    assert rc == 2
+
+
+def test_main_falls_back_to_previous_cache_on_discovery_http_error(monkeypatch, tmp_path):
+    cache_path = tmp_path / "mittwald-models-discovery.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "models": ["Ministral-3-14B-Instruct-2512"],
+                "classification": {
+                    "default_chat_model": "Ministral-3-14B-Instruct-2512",
+                    "default_embedding_model": None,
+                    "default_whisper_model": None,
+                    "default_reranking_model": None,
+                },
+            }
+        )
+    )
+
+    writes = []
+
+    def fake_write_json(path, data):
+        writes.append((str(path), data))
+
+    def fake_fetch(*_args, **_kwargs):
+        raise HTTPError(
+            url="https://llm.aihosting.mittwald.de/v1/models",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(seed, "MITTWALD_API_KEY", "mw-key")
+    monkeypatch.setattr(seed, "MITTWALD_REQUIRE_API_KEY", False)
+    monkeypatch.setattr(seed, "MITTWALD_STRICT_BOOTSTRAP", False)
+    monkeypatch.setattr(seed, "DISCOVERY_CACHE_PATH", cache_path)
+    monkeypatch.setattr(seed, "CONFIG_JSON_PATH", tmp_path / "config.json")
+    monkeypatch.setattr(seed, "fetch_mittwald_models", fake_fetch)
+    monkeypatch.setattr(seed, "load_existing_config_from_db", lambda _path: {})
+    monkeypatch.setattr(seed, "merge_mittwald_openai_config", lambda **_kwargs: {})
+    monkeypatch.setattr(seed, "write_json", fake_write_json)
+
+    rc = seed.main()
+    assert rc == 0
+    assert writes[-1][1]["models"] == ["Ministral-3-14B-Instruct-2512"]
+
+
+def test_main_returns_error_when_strict_bootstrap_and_discovery_fails(monkeypatch):
+    def fake_fetch(*_args, **_kwargs):
+        raise HTTPError(
+            url="https://llm.aihosting.mittwald.de/v1/models",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(seed, "MITTWALD_API_KEY", "mw-key")
+    monkeypatch.setattr(seed, "MITTWALD_REQUIRE_API_KEY", False)
+    monkeypatch.setattr(seed, "MITTWALD_STRICT_BOOTSTRAP", True)
+    monkeypatch.setattr(seed, "fetch_mittwald_models", fake_fetch)
+
+    rc = seed.main()
+    assert rc == 3

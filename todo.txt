@@ -1,290 +1,1236 @@
-I want this biut as a giuthub runner which monitors openweb ui stable releaes and if occuring patches the image with our modifications and tests it as well if it works or fails and then opens the image and checks our stack you can see in developer püortal mittwald ai hosting scrape it regularly for model changes in the table, fetch the recopmmended settings from huggingface (scrape) adn adapt it make a config with the desired settings temp topk top p etc and creates this and pushes to docker hub and then gives link for uis to iuse
+Th econtainer should be hosted on github but then this building should jappen on github as well but the Front end sets the MITTWALD APIO KEY AND BASE URL VIA FRONTEND IN N8N workflow:
 
-Yes — you can do this **without** creating a “secret admin” by doing a **one-time bootstrap** that:
+Homepage
+Primary navigation
+Project
+avatar
+LLM Locksmith
 
-1. starts Open WebUI normally,
-    
-2. waits until the **customer creates the first user** (who becomes admin on a fresh instance),
-    
-3. writes **per-account** default chat params into `webui.db` **only if the keys are missing**,
-    
-4. drops a marker file so it **never runs again**.
-    
+Pinned
 
-That way the customer is still prompted to create the admin, and afterwards they can freely change the values in Settings (because we’re not using per-model enforced params). (Open WebUI stores persistent config in `webui.db` under `/app/backend/data`, and chat params exist per-account/per-chat/per-model in the hierarchy described in the docs.) ([Hugging Face](https://huggingface.co/spaces/open-webui/open-webui/blob/main/README.md "https://huggingface.co/spaces/open-webui/open-webui/blob/main/README.md"))
+Manage
 
----
+Plan
 
-## Patch: custom image with “seed once, then stop” bootstrap
+Code
+Merge requests
+1
+Repository
+Branches
+Commits
+Tags
+Repository graph
+Compare revisions
+Snippets
+Locked files
 
-### `Dockerfile`
+Build
 
-```dockerfile
-FROM ghcr.io/open-webui/open-webui:main
+Secure
 
-# copy bootstrap scripts
-COPY bootstrap/start-with-bootstrap.sh /usr/local/bin/start-with-bootstrap.sh
-COPY bootstrap/seed_user_chat_params_once.py /usr/local/bin/seed_user_chat_params_once.py
+Deploy
 
-RUN chmod 755 /usr/local/bin/start-with-bootstrap.sh /usr/local/bin/seed_user_chat_params_once.py
+Operate
 
-# run our wrapper instead of the stock CMD ["bash", "start.sh"]
-CMD ["bash", "/usr/local/bin/start-with-bootstrap.sh"]
-```
+Monitor
 
-### `bootstrap/start-with-bootstrap.sh`
+Analyze
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Fire-and-forget bootstrap (runs once per volume)
-python3 /usr/local/bin/seed_user_chat_params_once.py &
-
-# Keep the original behavior as PID1 (signal handling stays correct)
-exec bash /app/backend/start.sh
-```
-
-### `bootstrap/seed_user_chat_params_once.py`
-
-```python
-#!/usr/bin/env python3
-import json
-import os
-import sqlite3
-import time
-from typing import Optional, Tuple, List, Dict
-
-DB_PATH = os.getenv("OWUI_DB_PATH", "/app/backend/data/webui.db")
-MARKER = os.getenv("OWUI_BOOTSTRAP_MARKER", "/app/backend/data/.bootstrapped_chat_params")
-
-# Env-controlled “desired defaults”
-DEFAULTS = {
-    "temperature": os.getenv("OWUI_BOOTSTRAP_TEMPERATURE"),
-    "top_p": os.getenv("OWUI_BOOTSTRAP_TOP_P"),
-    "top_k": os.getenv("OWUI_BOOTSTRAP_TOP_K"),
-    "repetition_penalty": os.getenv("OWUI_BOOTSTRAP_REPETITION_PENALTY"),
-    "max_tokens": os.getenv("OWUI_BOOTSTRAP_MAX_TOKENS"),
+Settings
+COAB 0x7e7
+Services
+avatarLLM Locksmith
+Repository
+llm-locksmith
+assets
+processes
+Ai_Hosting___Create_Container.json
+Ai_Hosting___Create_Container.json
+Ruven Fehling's avatar
+Unique container names
+Ruven Fehling authored 1 month ago
+083a99ac
+ Code owners
+Assign users and groups as approvers for specific file changes. Learn more.
+Ai_Hosting___Create_Container.json
+24.32 KiB
+{
+  "name": "Ai Hosting - Create Container",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ffbda2fb-9884-4313-8d85-4d6defcedb7d",
+              "leftValue": "={{ $json.openWebUIIngress }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c0539651-f402-4a4c-a640-8d3ded41a21a",
+      "name": "OpenWebUI Ingress exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2280,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "domain": "llmlocksmith",
+        "event": "webUiContainerRequested",
+        "eventID": "543758568269021183"
+      },
+      "id": "a0a5c38b-1bff-4b13-8ff3-9e9d8db84ed1",
+      "name": "WebUi Container Requested Event",
+      "type": "n8n-nodes-mittwald.domainEventTrigger",
+      "typeVersion": 1,
+      "position": [
+        180,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2d4aee6-1efd-4ff6-91f2-8ed0b73098ef",
+      "name": "Found containerId in stack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ac2a64de-b54a-481c-a0be-32a24c773610",
+      "name": "Ingress was updated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10a19631-e655-4f57-b634-80bb83c0a4d1",
+      "name": "Ingress was created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2d6f21f5-5a0e-4141-b3e0-67d5ca6a2936",
+      "name": "Container was linked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3180,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c2ffa4e1-334b-42f7-8fa1-fc8469c11dd9",
+      "name": "No Operation, do nothing",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Dokumentation \n\nTLDR: Die IF-Nodes die dicht an einer anderen Note sind, schauen nach Fehlern.\n\nWir möchten beim Fehlschlagen dieses Workflow dem Kunden im Frontend einen Fehler anzeigen. Daher gibt es in dem Workflow ein besonderes Error Handling.\n\nDie meines Node haben dicht hinter sich eine If-Node diese schaut ob in der vorherigen Node ein Fehler aufgetreten ist, ist das der Fall wir der Fehler an den LLM-Locksmith geschickt. ",
+        "height": 251.29172284667592,
+        "width": 576.5134818803699
+      },
+      "id": "20360ae6-e009-417c-b035-e897d58a009d",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        280,
+        157.66582027305702
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c8bc8f52-5040-4e11-877d-d2fa3db164f7",
+      "name": "No Operation, do nothing1",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        4060,
+        1240
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Error Reporting\n\nWir möchten dem Kunden bei jedem Error in diesem Workflow einen Fehler im Frontend anzeigen. Dafür die oben erwähnen If-Nodes. \n\nEs kann zu Fehlern kommen die der Kunde versehentlich verursacht hat. Zum Beispiel durch ungültige Credentails seiner Container Registry. Für diese Art von Fehler möchten wir keinen Report erhalten. Allerdings für alle anderen Fehler für die der Kunde nichts kann, daher die if Node fast am Ende.",
+        "height": 596.6441312547994,
+        "width": 964.6630930972868
+      },
+      "id": "bb72f9a1-13c4-46e0-88a0-5e6853e81550",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3280,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.llmlocksmith.v1.InternalLlmLocksmithService",
+        "functionName": "SetContainerCreationError",
+        "sendInputData": false,
+        "functionCode": "return {\n  licenceId: $json.event.licenceId,\n  errorMessage: $json.errorMessage,\n};",
+        "outputField": "errorResponse",
+        "options": {}
+      },
+      "id": "6535d6a8-d022-4f63-892d-cdd7918d3d6e",
+      "name": "Set Error Message for Licence",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        3560,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.ingress.v1.IngressService",
+        "functionName": "SetIngressPaths",
+        "sendInputData": false,
+        "message": "={{ { id: $json.openWebUIIngress.id, paths: [{ \"path\": \"/\", \"container\": { \"id\": $json.containerId, \"portProtocol\": \"8080/tcp\"}  }] } }}",
+        "outputField": "tmp",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "a8d57f74-6bf1-4b4b-8ed0-8181b1507d6b",
+      "name": "UpdateIngress",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        2540,
+        240
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.ingress.v1.IngressService",
+        "functionName": "CreateIngress",
+        "sendInputData": false,
+        "message": "={{\n{\n\"id\": $json.ingressId,\n\"hostname\": \"openwebui.\" + $json.defaultIngress.hostname,\n\"projectId\": $json.event.projectId,\n\"isDefault\": false,\n\"acme\": true,\n\"paths\": [{ \"path\": \"/\", \"container\": { \"id\": $json.containerId, \"portProtocol\": \"8080/tcp\"}  }],\n\"isEnabled\": true\n}\n}}",
+        "minEventID": "=",
+        "outputField": "tmp",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "name": "CreateIngress",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        2540,
+        580
+      ],
+      "id": "bc05c610-5870-4571-b301-3046299a9b61",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.llmlocksmith.v1.InternalLlmLocksmithService",
+        "functionName": "LinkContainerWithProjectLicence",
+        "sendInputData": false,
+        "functionCode": "return {\n  licenceId: $json.event.licenceId,\n  containerId: $json.containerId,\n  stackId: $json.event.projectId,\n  ingressId: $json.openWebUIIngress.id,\n};",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "54839684-f5da-47fa-a2b8-491d00b6a39b",
+      "name": "Link Container With Project Licence and use existing Ingress",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        2980,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.llmlocksmith.v1.InternalLlmLocksmithService",
+        "functionName": "LinkContainerWithProjectLicence",
+        "sendInputData": false,
+        "functionCode": "return {\n  licenceId: $json.event.licenceId,\n  containerId: $json.containerId,\n  stackId: $json.event.projectId,\n  ingressId: $json.ingressId,\n};",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "9e986d72-3fd1-4435-9a3e-b66ace384033",
+      "name": "Link Container With Project Licence",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        2980,
+        560
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const uuid = require(\"@mittwald/awesome-node-utils/text/uuid\").uuid;\n\nconst fakeCipher = $json.licence.licenceKey.slice(-4).toLowerCase();\nconst serviceName = \"ai-hosting-open-webui-\"+fakeCipher;\n\nconst stack = $input.item.json.stack;\nconst service = stack.services.find((x) => x.serviceName === serviceName);\n\nif (!service.id) {\n  throw new Error(\"No container id found!\");\n}\n\n$input.item.json.containerId = service.id;\n$input.item.json.ingressId = uuid();\n\nreturn $input.item;"
+      },
+      "id": "59b3fc50-06a8-4f7a-a7b9-6242ef66b1da",
+      "name": "Get containerId from stack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        440
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "errorType": "errorObject",
+        "errorObject": "="
+      },
+      "id": "9ae6dda7-edee-4629-ba1e-781fda40ad5e",
+      "name": "Stop and Error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        4060,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst ingresses = input.ingressResponse.ingresses;\n\nconst defaultHostname = input.defaultIngress.hostname;\n\nconst openWebUIIngress = ingresses.find((ingress) => {\n  return ingress.hostname === `openwebui.${defaultHostname}`\n});\n\nreturn {\n  ...input,\n  openWebUIIngress: openWebUIIngress,\n}"
+      },
+      "id": "1f0690a1-fdff-4c21-8f2b-7305be97a2c5",
+      "name": "Check for OpenWebUI ingress",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a8660393-70a7-4c8f-b837-3ec9fc5885ab",
+              "leftValue": "={{ $json.errorMessage }}",
+              "rightValue": "unknown-error",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "79f45156-d499-4cb2-85fe-b13d8cf76172",
+      "name": "Is mittwald error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3780,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  const errorMessage = item.json.error.details === \"registry credentials have no image access\" ? \"invalid-registry-credentials\" : \"unknown-error\";\n  \n  item.json = $node[\"WebUi Container Requested Event\"].json;\n  item.json.errorMessage = errorMessage;\n}\n\nreturn $input.all();"
+      },
+      "id": "ec778bb4-c4e9-4e9b-8f20-5a35966d23b1",
+      "name": "Set container-creation-failed error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2646c47e-759b-4dbc-aec3-dc2a0f7d18ee",
+      "name": "Container was created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b9acddc1-86a5-4e76-b758-3a3e799ffa4a",
+              "leftValue": "={{ \"error\" in $json }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cbbcb559-5b19-40f1-95f0-a1b1cc78c2e2",
+      "name": "Default Ingress found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.ingress.v1.IngressQueryService",
+        "functionName": "ListIngresses",
+        "sendInputData": false,
+        "message": "={{ { projectId: $json.event.projectId } }}",
+        "executingUser": "={{ $json.userMeta.executingUserId }}",
+        "outputField": "ingressResponse",
+        "postCode": "const ingresses = item.ingressResponse.ingresses ?? [];\nitem.defaultIngress = ingresses.find((i) => i.isDefault);\n\nif (!item.defaultIngress) {\n  throw new Error(\"No default ingress found!\");\n}\nreturn item;",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "522402c1-a4bc-4e34-9d6f-9eafe4d67dcd",
+      "name": "Get Default Ingress & Ingress list",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        420
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.container.v1.StackService",
+        "functionName": "PatchStack",
+        "sendInputData": false,
+        "functionCode": "const fakeCipher = $json.licence.licenceKey.slice(-4).toLowerCase();\nconst serviceName = \"ai-hosting-open-webui-\"+fakeCipher;\nconst volumeConfig = {};\nvolumeConfig[`${serviceName}-app-backend-data-GjP4`] = {\n   name: serviceName + \"-app-backend-data-GjP4\",\n   updateMask: { paths: [\"name\"]},\n};\n\nconst serviceConfig = {};\nserviceConfig[serviceName] = {\n   description: serviceName,\n   updateMask: { paths: [\"description\", \"serviceName\", \"volumes\", \"image\", \"ports\", \"envs\"]},\n   serviceName: serviceName,\n   volumes: [ serviceName + \"-app-backend-data-GjP4:/app/backend/data\"],\n   image: \"ghcr.io/open-webui/open-webui:latest\",\n   ports: [\"8080/tcp\"],\n   envs: {\n     OPENAI_API_KEY: $json.licence.licenceKey,\n     OPENAI_API_BASE_URL: \"https://llm.aihosting.mittwald.de/v1\"\n   },\n};\n\nreturn {\n  id: $json.event.projectId,\n  volumes: {\n    volumes: volumeConfig,\n    updateMask: { paths: [ serviceName + \"-app-backend-data-GjP4\"]},\n  },\n  services: {\n    updateMask: { paths: [ serviceName ]},\n    services: serviceConfig,\n  },\n};",
+        "executingUser": "={{ $json.userMeta.executingUserId }}",
+        "outputField": "stack",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "0b86cdcc-cd7a-4e35-a000-d88729a175ed",
+      "name": "Patch Container Stack",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        600,
+        460
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "serviceName": "mittwald.llmlocksmith.v1.InternalLlmLocksmithReaderService",
+        "functionName": "GetLicence",
+        "sendInputData": false,
+        "message": "={{ { licenceId: $json.event.licenceId } }}",
+        "outputField": "licence",
+        "options": {},
+        "retryAndContinueOnFail": true
+      },
+      "id": "09cd3829-0bd5-42d0-b846-5f9ef2a6be54",
+      "name": "Get Licence",
+      "type": "n8n-nodes-mittwald.domainCommand",
+      "typeVersion": 1,
+      "position": [
+        380,
+        460
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenWebUI Ingress exists": {
+      "main": [
+        [
+          {
+            "node": "UpdateIngress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CreateIngress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WebUi Container Requested Event": {
+      "main": [
+        [
+          {
+            "node": "Get Licence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found containerId in stack?": {
+      "main": [
+        [
+          {
+            "node": "Get Default Ingress & Ingress list",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingress was updated?": {
+      "main": [
+        [
+          {
+            "node": "Link Container With Project Licence and use existing Ingress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingress was created?": {
+      "main": [
+        [
+          {
+            "node": "Link Container With Project Licence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Container was linked?": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Error Message for Licence": {
+      "main": [
+        [
+          {
+            "node": "Is mittwald error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UpdateIngress": {
+      "main": [
+        [
+          {
+            "node": "Ingress was updated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CreateIngress": {
+      "main": [
+        [
+          {
+            "node": "Ingress was created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link Container With Project Licence and use existing Ingress": {
+      "main": [
+        [
+          {
+            "node": "Container was linked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link Container With Project Licence": {
+      "main": [
+        [
+          {
+            "node": "Container was linked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get containerId from stack": {
+      "main": [
+        [
+          {
+            "node": "Found containerId in stack?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for OpenWebUI ingress": {
+      "main": [
+        [
+          {
+            "node": "OpenWebUI Ingress exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is mittwald error?": {
+      "main": [
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set container-creation-failed error": {
+      "main": [
+        [
+          {
+            "node": "Set Error Message for Licence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Container was created?": {
+      "main": [
+        [
+          {
+            "node": "Get containerId from stack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Ingress found?": {
+      "main": [
+        [
+          {
+            "node": "Check for OpenWebUI ingress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set container-creation-failed error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Default Ingress & Ingress list": {
+      "main": [
+        [
+          {
+            "node": "Default Ingress found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Container Stack": {
+      "main": [
+        [
+          {
+            "node": "Container was created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Licence": {
+      "main": [
+        [
+          {
+            "node": "Patch Container Stack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "89"
+  },
+  "versionId": "1a8fa55c-dabd-4a8f-8bd6-e19fc450ea23",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f058efe2a704e382b6ce0b691cf6653ba025932c93972ff1d531547ce02c22cc"
+  },
+  "id": "noErfuY5pJBmA6dK",
+  "tags": [
+    {
+      "createdAt": "2023-03-01T09:56:48.984Z",
+      "updatedAt": "2023-03-07T13:04:53.489Z",
+      "id": "57",
+      "name": "team-csi"
+    },
+    {
+      "createdAt": "2025-06-25T12:46:51.842Z",
+      "updatedAt": "2025-06-25T12:46:51.842Z",
+      "id": "9f92oSEX9tDY0V2P",
+      "name": "repo:llm-locksmith"
+    },
+    {
+      "createdAt": "2025-06-25T12:47:49.258Z",
+      "updatedAt": "2025-06-25T12:47:49.258Z",
+      "id": "YzU0kaSOkryMEGTw",
+      "name": "ai-hosting"
+    }
+  ]
 }
 
-def _coerce(v: Optional[str]):
-    if v is None or v == "":
-        return None
-    # int if it looks like int, else float if it looks like float, else string
-    try:
-        if "." in v:
-            return float(v)
-        return int(v)
-    except ValueError:
-        return v
 
-DESIRED: Dict[str, object] = {k: _coerce(v) for k, v in DEFAULTS.items() if _coerce(v) is not None}
 
-def log(msg: str):
-    print(f"[bootstrap-chat-params] {msg}", flush=True)
 
-def wait_for_db(path: str, timeout_s: int = 600):
-    start = time.time()
-    while time.time() - start < timeout_s:
-        if os.path.exists(path) and os.path.getsize(path) > 0:
-            return
-        time.sleep(1)
-    raise TimeoutError(f"DB not found after {timeout_s}s: {path}")
 
-def list_tables(conn: sqlite3.Connection) -> List[str]:
-    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    return [r[0] for r in cur.fetchall()]
 
-def table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
-    cur = conn.execute(f"PRAGMA table_info('{table}')")
-    return [r[1] for r in cur.fetchall()]
+D
+F
+Projekt
+Daniels Testserver siuuuuuuu
+Allgemeines
+Dashboard
+Monitoring
+Leistungsanalyse
+Komponenten
+Apps
+Container
+AI-Hosting
+Domains
+E-Mails
+neu
+Datenbanken
+Backups
+Cronjobs
+SSH/SFTP
+Verwaltung
+Mitglieder
+Extensions
+Einstellungen
+Projekt
+Container
+Container-Details
+ai-hosting-open-webui-dkma
 
-def find_users_table(conn: sqlite3.Connection) -> Optional[str]:
-    tables = list_tables(conn)
-    # best-effort heuristics: table containing email+role is typically the user table
-    candidates = []
-    for t in tables:
-        cols = set(table_columns(conn, t))
-        if "email" in cols and ("role" in cols or "is_admin" in cols):
-            score = 0
-            for c in ("name", "username", "created_at", "updated_at", "settings"):
-                if c in cols:
-                    score += 1
-            candidates.append((score, t))
-    if candidates:
-        candidates.sort(reverse=True)
-        return candidates[0][1]
+Aktionen
+Details
+Entrypoint
+Volumes
+Umgebungsvariablen
+Ports
+Logs
+Umgebungsvariablen
 
-    # fallback by name
-    for t in tables:
-        if t.lower() in ("user", "users", "account", "accounts"):
-            return t
-    return None
+Bearbeiten
+Verwende Umgebungsvariablen zur Konfiguration und für Secrets. Wir schlagen einige vor, aber nicht alle sind sinnvoll oder vollständig. Im Zweifel empfehlen wir einen Blick in die Dokumentation zum Image.
+Key	Value	KI-Unterstützung
+OPENAI_API_BASE_URL	https://llm.aihosting.mittwald.de/v1	–
+OPENAI_API_KEY	•••••••••	–
+Datenschutz
+Impressum
 
-def find_settings_column(conn: sqlite3.Connection, table: str) -> Optional[str]:
-    cols = table_columns(conn, table)
-    for c in ("settings", "preferences", "config", "data", "meta", "info"):
-        if c in cols:
-            return c
-    return None
 
-def find_id_column(conn: sqlite3.Connection, table: str) -> str:
-    cols = table_columns(conn, table)
-    for c in ("id", "user_id", "uuid"):
-        if c in cols:
-            return c
-    return cols[0]  # last resort
+n8n
+Share your workflows with 40k+ users, unlock perks, and shine as a featured template creator!
 
-def user_count(conn: sqlite3.Connection, table: str) -> int:
-    cur = conn.execute(f"SELECT COUNT(*) FROM '{table}'")
-    return int(cur.fetchone()[0])
 
-def ensure_nested(d: dict, *path: str) -> dict:
-    cur = d
-    for p in path:
-        if p not in cur or not isinstance(cur[p], dict):
-            cur[p] = {}
-        cur = cur[p]
-    return cur
+84 updates
+W.
+Wer das liest ist doof .
 
-def update_user_settings_once(conn: sqlite3.Connection, table: str, id_col: str, settings_col: str) -> int:
-    """
-    Applies DESIRED keys only if missing under settings['chat']['params'].
-    Returns number of updated rows.
-    """
-    updated = 0
-    cur = conn.execute(f"SELECT {id_col}, {settings_col} FROM '{table}'")
-    rows = cur.fetchall()
 
-    for user_id, settings_raw in rows:
-        base = {}
-        if settings_raw:
-            try:
-                base = json.loads(settings_raw)
-                if not isinstance(base, dict):
-                    base = {}
-            except Exception:
-                base = {}
 
-        params = ensure_nested(base, "chat", "params")
 
-        changed = False
-        for k, v in DESIRED.items():
-            if k not in params:
-                params[k] = v
-                changed = True
 
-        if changed:
-            conn.execute(
-                f"UPDATE '{table}' SET {settings_col} = ? WHERE {id_col} = ?",
-                (json.dumps(base, ensure_ascii=False), user_id),
-            )
-            updated += 1
 
-    return updated
 
-def main():
-    if not DESIRED:
-        log("No OWUI_BOOTSTRAP_* env vars set; nothing to do.")
-        return
 
-    if os.path.exists(MARKER):
-        log("Marker exists; bootstrap already done.")
-        return
 
-    log(f"Waiting for DB: {DB_PATH}")
-    wait_for_db(DB_PATH)
 
-    # keep retrying in case the app is migrating/locking sqlite
-    for attempt in range(1, 301):  # ~10 minutes (2s sleep)
-        try:
-            conn = sqlite3.connect(DB_PATH, timeout=30)
-            conn.execute("PRAGMA busy_timeout=30000;")
 
-            users_table = find_users_table(conn)
-            if not users_table:
-                log("Could not find users table yet; retrying...")
-                conn.close()
-                time.sleep(2)
-                continue
 
-            # Wait until the customer actually signs up
-            if user_count(conn, users_table) < 1:
-                conn.close()
-                time.sleep(2)
-                continue
 
-            settings_col = find_settings_column(conn, users_table)
-            if not settings_col:
-                log(f"Found users table '{users_table}' but no obvious settings column; aborting (no changes).")
-                conn.close()
-                return
 
-            id_col = find_id_column(conn, users_table)
 
-            conn.execute("BEGIN;")
-            n = update_user_settings_once(conn, users_table, id_col, settings_col)
-            conn.execute("COMMIT;")
-            conn.close()
 
-            # write marker into the persistent volume so it only ever runs once
-            with open(MARKER, "w", encoding="utf-8") as f:
-                f.write(f"done {int(time.time())}\n")
 
-            log(f"Injected defaults into {n} user(s). Done.")
-            return
 
-        except sqlite3.OperationalError as e:
-            # most common: database is locked during migrations/startup
-            log(f"SQLite operational error (attempt {attempt}): {e}; retrying...")
-            try:
-                conn.close()
-            except Exception:
-                pass
-            time.sleep(2)
 
-    log("Gave up waiting for a writable DB/users; no changes applied.")
 
-if __name__ == "__main__":
-    main()
-```
 
----
 
-## Run it
 
-Example:
 
-```bash
-docker build -t openwebui-seeded .
 
-docker run -d -p 3000:8080 \
-  -v open-webui:/app/backend/data \
-  -e OWUI_BOOTSTRAP_TEMPERATURE=0.2 \
-  -e OWUI_BOOTSTRAP_TOP_P=0.9 \
-  -e OWUI_BOOTSTRAP_TOP_K=40 \
-  -e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.1 \
-  -e OWUI_BOOTSTRAP_MAX_TOKENS=2048 \
-  --name open-webui \
-  openwebui-seeded
-```
+Back to canvas
 
-What happens:
 
-- First launch: customer visits UI → creates first account → becomes admin (fresh DB).
-    
-- Bootstrap script detects that first user and sets **account defaults** (only missing keys), then writes a marker and stops.
-    
-- Customer can change the values later in Settings (we’re not enforcing per-model params). ([docs.openwebui.com](https://docs.openwebui.com/features/chat-features/chat-params/ "https://docs.openwebui.com/features/chat-features/chat-params/"))
-    
+Input
+WebUi Container Requested Even... 
+No input data yet
+(From the earliest node that has no output data yet)
+Output
+Test this node to output data
+or insert test data
 
----
+Get Licence 
+Parameters
+Docs
+Service Name
+mittwald.llmlocksmith.v1.InternalLlmLocksmithReaderService
+Function Name
+GetLicence
+Send Input Data
 
-### Notes / gotchas
+Message
+{{ { licenceId: $json.event.licenceId } }}
+ 
+FunctionItem Message
+1
 
-- This intentionally **does not** touch per-model presets (those can override user choices). If you later set per-model advanced params in the Model editor, those may “win” over user controls by design. ([docs.openwebui.com](https://docs.openwebui.com/features/chat-features/chat-params/ "https://docs.openwebui.com/features/chat-features/chat-params/"))
-    
-- This relies on the users table having a JSON-ish settings column (common in Open WebUI). If the schema changes, the script fails safely (no changes).
-    
+minEventID
+executingUser
+Output Field
+licence
+Metadata Output Field
+Post Processing FunctionItem
+1
+return item;
+Options
+No properties
+gRPC Retry Calls
+3
+use retry and continue on fail
 
-If you want the same defaults to be auto-applied to **every new user created later**, say so and I’ll adjust the bootstrap to hook into signup via a tiny middleware patch (still without any hidden admin).
+ I wish this node would...
+n8n
+Share your workflows with 40k+ users, unlock perks, and shine as a featured template creator!
+
+
+84 updates
+W.
+Wer das liest ist doof .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Back to canvas
+
+Input
+Get Licence 
+No input data yet
+(From the earliest node that has no output data yet)
+Output
+Test this node to output data
+or insert test data
+
+Patch Container Stack 
+Parameters
+Docs
+Service Name
+mittwald.container.v1.StackService
+Function Name
+PatchStack
+Send Input Data
+
+Message
+1
+
+
+FunctionItem Message
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+⌄
+⌄
+⌄
+const fakeCipher = $json.licence.licenceKey.slice(-4).toLowerCase();
+const serviceName = "ai-hosting-open-webui-"+fakeCipher;
+const volumeConfig = {};
+volumeConfig[`${serviceName}-app-backend-data-GjP4`] = {
+   name: serviceName + "-app-backend-data-GjP4",
+   updateMask: { paths: ["name"]},
+};
+
+const serviceConfig = {};
+serviceConfig[serviceName] = {
+   description: serviceName,
+   updateMask: { paths: ["description", "serviceName", "volumes", "image", "ports", "envs"]},
+   serviceName: serviceName,
+   volumes: [ serviceName + "-app-backend-data-GjP4:/app/backend/data"],
+   image: "ghcr.io/open-webui/open-webui:latest",
+   ports: ["8080/tcp"],
+   envs: {
+     OPENAI_API_KEY: $json.licence.licenceKey,
+     OPENAI_API_BASE_URL: "https://llm.aihosting.mittwald.de/v1"
+minEventID
+executingUser
+{{ $json.userMeta.executingUserId }}
+ 
+Output Field
+stack
+Metadata Output Field
+Post Processing FunctionItem
+1
+return item;
+Options
+No properties
+gRPC Retry Calls
+3
+use retry and continue on fail
+
+ I wish this node would...
+n8n
+Share your workflows with 40k+ users, unlock perks, and shine as a featured template creator!
+
+
+84 updates
+W.
+Wer das liest ist doof .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Back to canvas
+Input
+Container was created? 
+No input data yet
+(From the earliest node that has no output data yet)
+Output
+Test this node to output data
+or insert test data
+
+Get containerId from stack 
+Parameters
+Docs
+Mode
+Run Once for Each Item
+Language
+JavaScript
+JavaScript
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+⌄
+const uuid = require("@mittwald/awesome-node-utils/text/uuid").uuid;
+
+const fakeCipher = $json.licence.licenceKey.slice(-4).toLowerCase();
+const serviceName = "ai-hosting-open-webui-"+fakeCipher;
+
+const stack = $input.item.json.stack;
+const service = stack.services.find((x) => x.serviceName === serviceName);
+
+if (!service.id) {
+  throw new Error("No container id found!");
+}
+
+$input.item.json.containerId = service.id;
+$input.item.json.ingressId = uuid();
+
+return $input.item;
+Type $ for a list of special vars/methods. Debug by using console.log() statements and viewing their output in the browser console.
+ I wish this node would...
