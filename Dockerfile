@@ -20,6 +20,8 @@ RUN chmod 755 /usr/local/bin/start-with-bootstrap.sh /usr/local/bin/seed_user_ch
 ENV OWUI_DB_PATH="/app/backend/data/webui.db"
 ENV OWUI_BOOTSTRAP_MARKER="/app/backend/data/.bootstrapped_chat_params"
 ENV OWUI_BOOTSTRAP_REAPPLY_ON_START="false"
+ENV OWUI_BOOTSTRAP_OVERWRITE_MODE="stale"
+ENV OWUI_BOOTSTRAP_MARKER_VERSION="v2"
 ENV MITTWALD_OPENAI_BASE_URL="https://llm.aihosting.mittwald.de/v1"
 ENV HF_MODEL_HYPERPARAMS_PATH="/usr/local/share/openwebui/hf-model-hyperparameters.json"
 

@@ -21,7 +21,7 @@ Package link:
   - Extracts README/card/generation parameters and captures `chat_template` metadata
 - Mittwald model scrape (`scripts/scrape_mittwald_portal.py`, optional token)
 - Bootstrap seeding in container startup:
-  - One-time user chat defaults
+  - Safe startup user chat defaults sync (self-healing for stale defaults like `0.8`)
   - Mittwald OpenAI provider auto-configuration
   - Auto-discovery of all available Mittwald models from `/v1/models` (including embeddings and Whisper)
   - Auto-setup of Open WebUI STT engine for Mittwald Whisper model
@@ -176,8 +176,11 @@ GHCR_USERNAME=<user> GHCR_TOKEN=<token> make push
 - `MITTWALD_REQUIRE_API_KEY` (default: `false`, fail bootstrap when key is missing)
 - `MITTWALD_STRICT_BOOTSTRAP` (default: `false`, fail bootstrap when model discovery fails)
 - `MITTWALD_FAIL_FAST` (default: `false`, fail container start when Mittwald bootstrap fails)
-- `OWUI_BOOTSTRAP_FORCE` (default: `true`, overwrite factory defaults when bootstrap runs)
-- `OWUI_BOOTSTRAP_REAPPLY_ON_START` (default: `false`, set `true` only for forced re-seeding on every startup)
+- `OWUI_BOOTSTRAP_FORCE` (legacy compatibility flag; `true` -> `always`, `false` -> `missing`)
+- `OWUI_BOOTSTRAP_OVERWRITE_MODE` (default: `stale`, valid: `stale|missing|always`)
+- `OWUI_BOOTSTRAP_REAPPLY_ON_START` (default: `false`, force full re-sync on every startup)
+- `OWUI_BOOTSTRAP_MARKER_VERSION` (default: `v2`, bump to trigger one-time migration sync)
+- `OWUI_BOOTSTRAP_SYNC_CHATS_ON_EVERY_START` (default: `false`, enable only if you want chat history params re-synced on every restart)
 - `OWUI_BOOTSTRAP_MAX_WAIT_SECONDS` (default: `86400`, wait for first signup)
 - `OWUI_BOOTSTRAP_POLL_INTERVAL_SEC` (default: `2`)
 - `OWUI_BOOTSTRAP_DB_WAIT_TIMEOUT_SEC` (default: `600`, DB readiness wait timeout per run)

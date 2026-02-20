@@ -517,3 +517,142 @@ def test_build_desired_defaults_applies_hf_generation_then_hyperparams(
     assert desired["temperature"] == 0.1
     assert desired["top_p"] == 0.5
     assert desired["top_k"] == 10
+
+
+def test_update_user_settings_once_stale_mode_repairs_only_known_factory_defaults(tmp_path):
+    db_path = tmp_path / "webui.db"
+    conn = _create_users_db(db_path)
+
+    stale_settings = {"ui": {"params": {"temperature": 0.8, "top_p": 0.9, "top_k": 40}}}
+    custom_settings = {"ui": {"params": {"temperature": 0.33, "top_p": 0.77, "top_k": 12}}}
+
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (1, "stale@example.com", "admin", json.dumps(stale_settings)),
+    )
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (2, "custom@example.com", "user", json.dumps(custom_settings)),
+    )
+    conn.commit()
+
+    desired = {"temperature": 0.1, "top_p": 0.5, "top_k": 10}
+    updated = seed.update_user_settings_once(
+        conn,
+        "users",
+        "id",
+        "settings",
+        desired=desired,
+        overwrite_mode="stale",
+    )
+    conn.commit()
+
+    assert updated == 2
+
+    stale_row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
+    stale_parsed = json.loads(stale_row)
+    assert stale_parsed["ui"]["params"]["temperature"] == 0.1
+    assert stale_parsed["ui"]["params"]["top_p"] == 0.5
+    assert stale_parsed["ui"]["params"]["top_k"] == 10
+
+    custom_row = conn.execute("SELECT settings FROM users WHERE id = 2").fetchone()[0]
+    custom_parsed = json.loads(custom_row)
+    assert custom_parsed["ui"]["params"]["temperature"] == 0.33
+    assert custom_parsed["ui"]["params"]["top_p"] == 0.77
+    assert custom_parsed["ui"]["params"]["top_k"] == 12
+
+    conn.close()
+
+
+def test_main_migrates_legacy_marker_and_rewrites_json_marker(tmp_path, monkeypatch):
+    db_path = tmp_path / "webui.db"
+    conn = _create_users_db(db_path)
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (
+            1,
+            "legacy@example.com",
+            "admin",
+            json.dumps({"ui": {"params": {"temperature": 0.8, "top_p": 0.9, "top_k": 40}}}),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    marker = tmp_path / "marker"
+    marker.write_text("done 123456\n", encoding="utf-8")
+
+    desired = {"temperature": 0.1, "top_p": 0.5, "top_k": 10}
+    monkeypatch.setattr(seed, "DB_PATH", str(db_path))
+    monkeypatch.setattr(seed, "MARKER", str(marker))
+    monkeypatch.setattr(seed, "DB_WAIT_TIMEOUT_SEC", 1)
+    monkeypatch.setattr(seed, "MAX_WAIT_SECONDS", 5)
+    monkeypatch.setattr(seed, "POLL_INTERVAL_SEC", 1)
+    monkeypatch.setattr(seed, "DESIRED", desired)
+    monkeypatch.setattr(seed, "OVERWRITE_MODE", "stale")
+    monkeypatch.setattr(seed, "REAPPLY_ON_START", False)
+    monkeypatch.setattr(seed, "SYNC_CHATS_ON_EVERY_START", False)
+    monkeypatch.setattr(seed, "BOOTSTRAP_MARKER_VERSION", "v-test")
+
+    seed.main()
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["ui"]["params"]["temperature"] == 0.1
+    assert parsed["ui"]["params"]["top_p"] == 0.5
+    assert parsed["ui"]["params"]["top_k"] == 10
+    conn.close()
+
+    marker_payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert marker_payload["version"] == "v-test"
+    assert marker_payload["desired_hash"] == seed._desired_fingerprint(desired)
+
+
+def test_main_runs_safety_sync_even_with_current_marker(tmp_path, monkeypatch):
+    db_path = tmp_path / "webui.db"
+    conn = _create_users_db(db_path)
+    conn.execute(
+        "INSERT INTO users (id, email, role, settings, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+        (
+            1,
+            "current@example.com",
+            "admin",
+            json.dumps({"ui": {"params": {"temperature": 0.8, "top_p": 0.9, "top_k": 40}}}),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    desired = {"temperature": 0.1, "top_p": 0.5, "top_k": 10}
+    marker = tmp_path / "marker"
+    marker.write_text(
+        json.dumps(
+            {
+                "version": "v-test-current",
+                "desired_hash": seed._desired_fingerprint(desired),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(seed, "DB_PATH", str(db_path))
+    monkeypatch.setattr(seed, "MARKER", str(marker))
+    monkeypatch.setattr(seed, "DB_WAIT_TIMEOUT_SEC", 1)
+    monkeypatch.setattr(seed, "MAX_WAIT_SECONDS", 5)
+    monkeypatch.setattr(seed, "POLL_INTERVAL_SEC", 1)
+    monkeypatch.setattr(seed, "DESIRED", desired)
+    monkeypatch.setattr(seed, "OVERWRITE_MODE", "stale")
+    monkeypatch.setattr(seed, "REAPPLY_ON_START", False)
+    monkeypatch.setattr(seed, "SYNC_CHATS_ON_EVERY_START", False)
+    monkeypatch.setattr(seed, "BOOTSTRAP_MARKER_VERSION", "v-test-current")
+
+    seed.main()
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT settings FROM users WHERE id = 1").fetchone()[0]
+    parsed = json.loads(row)
+    assert parsed["ui"]["params"]["temperature"] == 0.1
+    assert parsed["ui"]["params"]["top_p"] == 0.5
+    assert parsed["ui"]["params"]["top_k"] == 10
+    conn.close()

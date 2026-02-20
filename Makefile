@@ -20,11 +20,11 @@ unit-test: ## Run Python unit tests
 run: ## Run the container locally
 	docker run -d -p 3000:8080 \
 		-v open-webui-data:/app/backend/data \
-		-e OWUI_BOOTSTRAP_TEMPERATURE=0.7 \
-		-e OWUI_BOOTSTRAP_TOP_P=0.9 \
-		-e OWUI_BOOTSTRAP_TOP_K=40 \
-		-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.1 \
-		-e OWUI_BOOTSTRAP_MAX_TOKENS=2048 \
+		-e OWUI_BOOTSTRAP_TEMPERATURE=0.1 \
+		-e OWUI_BOOTSTRAP_TOP_P=0.5 \
+		-e OWUI_BOOTSTRAP_TOP_K=10 \
+		-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.0 \
+		-e OWUI_BOOTSTRAP_MAX_TOKENS=4096 \
 		--name openwebui-test \
 		openwebui-mittwald:local
 
@@ -87,11 +87,11 @@ test-full: check build test ## Run full lint, unit, and container test cycle
 dev: build ## Build and run for development
 	docker run -it -p 3000:8080 \
 		-v open-webui-data:/app/backend/data \
-		-e OWUI_BOOTSTRAP_TEMPERATURE=0.7 \
-		-e OWUI_BOOTSTRAP_TOP_P=0.9 \
-		-e OWUI_BOOTSTRAP_TOP_K=40 \
-		-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.1 \
-		-e OWUI_BOOTSTRAP_MAX_TOKENS=2048 \
+		-e OWUI_BOOTSTRAP_TEMPERATURE=0.1 \
+		-e OWUI_BOOTSTRAP_TOP_P=0.5 \
+		-e OWUI_BOOTSTRAP_TOP_K=10 \
+		-e OWUI_BOOTSTRAP_REPETITION_PENALTY=1.0 \
+		-e OWUI_BOOTSTRAP_MAX_TOKENS=4096 \
 		--entrypoint bash \
 		openwebui-mittwald:local
 
